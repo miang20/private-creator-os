@@ -29,6 +29,12 @@ Never commit API keys into source code.
 - Local template-based story and transformation plans with dedicated hook blueprints, adaptive packaging, and caption-beat helpers.
 - Optional official YouTube Data API research.
 
+## OpusClip-style free workflow
+
+- **Shorts factory:** upload a long video, rank candidate moments with local transcript + visual scene signals, and export several vertical 9:16 MP4s with optional captions, hook overlays, silence removal, face-aware crop, audio normalization, and direct in-app previews/downloads.
+- **16:9 Multi-Clip Editor:** upload 2–4 clips in the exact timeline order (one main clip plus 1–3 extras). Each clip is normalized to 1920×1080, 30 fps and square pixels, clips without audio receive a silent track, and the app joins them into one landscape MP4 with optional loudness normalization, subtle contrast/color/sharpness polish, and an opening title overlay. The finished video is previewable in the app and downloadable as a standalone MP4.
+- **No paid AI API required:** transcription is local; clip ranking uses local heuristics and FFmpeg scene signals. Hosted CPU, RAM, file-upload and execution limits still apply.
+
 ## Important limits
 
 This is not unlimited cloud compute. Local Whisper inference can be slow or fail on free-host memory/time limits; the app attempts to fall back to visual scene-change ranking. Automatic routing and ranking are heuristic and need human review. Strategy confidence is not a viral prediction; scene changes do not equal semantic highlights. Face-aware framing is best-effort face detection, not general person/object tracking; it falls back to the selected manual crop focus when faces are not detected. B-roll is user-supplied and inserted on a rhythm, not semantically selected by AI. Visual finishing remains restrained and should be reviewed before publishing. Audio-only podcast exports use a plain background unless B-roll footage is supplied. This app does not generate finished AI footage, perform speaker diarization, or promise viral performance. YouTube Data API research is optional but quota-limited. Use media you own or have permission to edit.

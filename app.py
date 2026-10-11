@@ -13,6 +13,7 @@ from core.packaging import make_packaging, build_caption_plan
 from core.planners import plan_story, plan_transformation
 from core.research import search_youtube
 from core.video import ffmpeg_available, parse_segments, render_zip, render_auto_zip
+from core.montage import render_landscape_montage
 
 
 CONTENT_TYPES = ["Auto", "Funny / Unexpected", "Story / Drama", "Podcast / Opinion", "Satisfying / Transformation", "Tutorial / Educational", "Sports / Action", "Reaction / Commentary", "General / Visual-first"]
@@ -100,7 +101,7 @@ st.title("🎬 Creator OS")
 st.caption("Free-first creator workspace · Detect → Strategize → Edit → Package")
 with st.sidebar:
     st.header("Your studio")
-    module = st.radio("Select module", ["Repurposing Studio", "Breakout Radar", "Transformation Planner", "Story-to-Video Studio", "Podcast-to-Shorts", "Packaging Lab"])
+    module = st.radio("Select module", ["Repurposing Studio", "16:9 Multi-Clip Editor", "Breakout Radar", "Transformation Planner", "Story-to-Video Studio", "Podcast-to-Shorts", "Packaging Lab"])
     st.divider()
     st.markdown("**System status**")
     st.write("Paid AI API:", "Disabled in this build")
@@ -166,6 +167,8 @@ if module == "Repurposing Studio":
             st.success(f"Rendered {len(mp4_files)} MP4 clip(s) using the {analysis['hook_plan']['label']} route.")
             st.subheader("Download finished MP4 video(s)")
             for mp4_name, mp4_data in mp4_files:
+                with st.expander(f"Preview: {mp4_name}", expanded=True):
+                    st.video(mp4_data)
                 st.download_button(
                     f"Download {mp4_name}", data=mp4_data, file_name=mp4_name,
                     mime="video/mp4", key=f"download_mp4_{mp4_name}", on_click="ignore",
@@ -201,6 +204,62 @@ if module == "Repurposing Studio":
         result = build_caption_plan(transcript)
         st.text_area("Caption beats", result, height=180)
         st.download_button("Download caption plan", result, "caption_beats.txt", "text/plain")
+
+elif module == "16:9 Multi-Clip Editor":
+    st.subheader("16:9 Multi-Clip Editor")
+    st.write("Upload your main video plus 1–3 extra clips. Creator OS will normalize the footage, fit every clip to a clean 1920×1080 frame, keep clip audio synchronized, fill missing audio with silence, and join everything into one downloadable MP4.")
+    uploads = st.file_uploader(
+        "Select 2–4 clips in the order you want them to appear",
+        type=["mp4", "mov", "m4v", "webm", "mkv"],
+        accept_multiple_files=True,
+        key="landscape_montage_uploads",
+        help="Choose 1 main clip plus 1–3 extra clips. Upload order becomes the final timeline order.",
+    )
+    m1, m2 = st.columns(2)
+    with m1:
+        montage_clip_limit = st.slider("Maximum seconds used from each clip", 5, 180, 30, step=5, key="montage_clip_limit", help="Each input starts at 0 seconds and is trimmed to this limit. Increase it to use longer sections.")
+    with m2:
+        montage_quality = st.selectbox("Landscape export quality", ["Balanced 1080p", "High Quality 1080p", "Fast Preview"], index=0, key="montage_quality")
+    montage_normalize = st.checkbox("Normalize final audio to a consistent loudness", value=True, key="montage_normalize")
+    montage_enhance = st.checkbox("Apply subtle visual polish (contrast, color and sharpness)", value=True, key="montage_enhance")
+    montage_title = st.text_input("Optional opening title / hook", max_chars=90, key="montage_title", placeholder="e.g. THIS GOT UNEXPECTED…")
+    if uploads:
+        st.caption(f"{len(uploads)} clip(s) selected. Use 2–4 clips for this workflow.")
+        st.dataframe(
+            [{"Order": i + 1, "File": item.name, "Size (MB)": round(len(item.getvalue()) / (1024 * 1024), 1)} for i, item in enumerate(uploads)],
+            use_container_width=True, hide_index=True,
+        )
+    if st.button("Build separate 16:9 video", type="primary", disabled=not (uploads and 2 <= len(uploads) <= 4), key="build_landscape_montage"):
+        try:
+            with st.spinner("Preparing clips, normalizing 16:9 framing and rendering final MP4…"):
+                montage_bytes, montage_info = render_landscape_montage(
+                    uploads,
+                    max_seconds_per_clip=montage_clip_limit,
+                    normalize_audio=montage_normalize,
+                    output_quality=montage_quality,
+                    enhance_visuals=montage_enhance,
+                    opening_title=montage_title,
+                )
+            st.success("Landscape video rendered and validated.")
+            q1, q2, q3 = st.columns(3)
+            q1.metric("Duration", f"{montage_info['duration_seconds']:.1f}s")
+            q2.metric("Resolution", montage_info["resolution"])
+            q3.metric("File size", f"{montage_info['bytes'] / (1024 * 1024):.1f} MB")
+            st.video(montage_bytes)
+            st.download_button(
+                "Download final 16:9 MP4",
+                data=montage_bytes,
+                file_name="creator_os_landscape_montage.mp4",
+                mime="video/mp4",
+                type="primary",
+                key="download_landscape_montage",
+                on_click="ignore",
+            )
+            with st.expander("Render details"):
+                st.json(montage_info)
+        except Exception as exc:
+            st.error(f"Landscape render failed: {exc}")
+            st.caption("If the host timed out or ran out of memory, retry with shorter clips or Fast Preview quality.")
 
 elif module == "Breakout Radar":
     st.subheader("New-Channel Breakout Radar")
