@@ -1,91 +1,132 @@
 from __future__ import annotations
-
-import os
-from pathlib import Path
-
+import csv
+import io
 import streamlit as st
+from core.config import openai_api_key, youtube_api_key
+from core.packaging import make_packaging, build_caption_plan
+from core.planners import plan_story, plan_transformation
+from core.research import search_youtube
+from core.video import ffmpeg_available, parse_segments, render_zip
 
-APP_NAME = "Creator OS"
-MODULES = {
-    "Repurposing Studio": "Turn source videos you own or are licensed to use into a coherent long-form edit and short clips.",
-    "Breakout Radar": "Research niches, emerging channels, and unusually strong public videos.",
-    "Transformation Planner": "Build satisfying construction, restoration, and transformation concepts with shot plans.",
-    "Story-to-Video Studio": "Turn a story idea into scenes, visual prompts, and a continuity plan.",
-    "Podcast-to-Shorts": "Find strong speaker moments and plan caption-ready short clips.",
-    "Packaging Lab": "Develop hooks, titles, descriptions, and thumbnail directions.",
-}
+def to_csv(items):
+    buf = io.StringIO()
+    fields = ["title", "channel", "published_at", "views", "url"]
+    writer = csv.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
+    writer.writeheader()
+    writer.writerows(items)
+    return buf.getvalue()
 
-st.set_page_config(page_title=APP_NAME, page_icon="🎬", layout="wide")
-
+st.set_page_config(page_title="Creator OS", page_icon="🎬", layout="wide")
 st.title("🎬 Creator OS")
-st.caption("Your private-use creator workspace · Research → Plan → Produce → Review")
-
+st.caption("Personal creator workspace · Research → Plan → Edit → Package")
 with st.sidebar:
-    st.header("Workspace")
-    selected_module = st.radio("Choose a studio", list(MODULES.keys()))
+    st.header("Your studio")
+    module = st.radio("Select module", ["Repurposing Studio","Breakout Radar","Transformation Planner","Story-to-Video Studio","Podcast-to-Shorts","Packaging Lab"])
     st.divider()
-    st.caption("Creator OS is an early build. A visible module is not yet proof that its complete processing pipeline is connected.")
+    st.markdown("**Connection status**")
+    st.write("OpenAI API:", "Connected" if openai_api_key() else "Template mode (no API key)")
+    st.write("YouTube Data API:", "Connected" if youtube_api_key() else "Not configured")
+    st.write("FFmpeg:", "Available" if ffmpeg_available() else "Not found")
+    st.caption("Keep API keys in Streamlit Secrets, never in source code.")
+st.info("Personal-use creator tool. Upload only media you own or are licensed to process. API use may incur separate charges; ChatGPT subscription does not include API credits.")
 
-st.subheader(selected_module)
-st.write(MODULES[selected_module])
+if module == "Repurposing Studio":
+    st.subheader("AI Long-Video Repurposing Studio")
+    st.write("Upload a source video, choose timestamps for the strongest moments, and render MP4 clips. This first build uses explicit timestamps rather than pretending automatic moment detection is connected.")
+    source = st.file_uploader("Upload one source video", type=["mp4","mov","m4v","webm"], key="repurpose_source")
+    aspect = st.radio("Output format", ["Vertical 9:16 (Shorts)","Landscape 16:9"], horizontal=True)
+    st.markdown("Enter one clip per line as start_seconds,end_seconds,title. Example: 12,28,Best_Moment")
+    segment_text = st.text_area("Clip timestamp plan", value="12,28,Best_Moment\n35,52,Second_Moment", height=120)
+    st.caption("Timestamps are seconds from the start of the uploaded source. Keep end times within the source duration.")
+    if st.button("Render selected clips", type="primary", disabled=source is None):
+        try:
+            segments = parse_segments(segment_text)
+            with st.spinner("Rendering clips with FFmpeg…"):
+                archive = render_zip(source, segments, vertical=aspect.startswith("Vertical"))
+            st.success(f"Rendered {len(segments)} clip(s). Export is ready.")
+            st.download_button("Download rendered clips (.zip)", archive, file_name="creator_os_clips.zip", mime="application/zip")
+        except Exception as exc:
+            st.error(str(exc))
+    st.divider()
+    st.markdown("**Transcript / caption helper**")
+    transcript = st.text_area("Paste a transcript to create a 1–3 word caption beat plan", key="repurpose_transcript")
+    if st.button("Create caption beat plan", key="caption_plan") and transcript.strip():
+        try:
+            result = build_caption_plan(transcript)
+            st.text_area("Caption beats", result, height=220)
+            st.download_button("Download caption plan", result, "caption_beats.txt", "text/plain")
+        except Exception as exc:
+            st.error(str(exc))
 
-if selected_module == "Repurposing Studio":
-    st.info("Upload source media you own or have permission to edit. Full rendering will be enabled after the processing worker and storage are connected.")
-    uploads = st.file_uploader(
-        "Add source videos",
-        type=["mp4", "mov", "m4v", "webm"],
-        accept_multiple_files=True,
-        help="For the first cloud test, use short sample files. Streamlit hosting has upload and resource limits.",
-    )
-    col1, col2 = st.columns(2)
-    with col1:
-        target_long = st.checkbox("Plan one coherent long-form edit", value=True)
-        target_shorts = st.checkbox("Plan 3–4 Shorts", value=True)
-    with col2:
-        caption_toggle = st.checkbox("Include word-highlight caption plan", value=True)
-        vertical = st.checkbox("Shorts output: vertical 9:16", value=True)
-    if uploads:
-        st.write(f"Selected files: {len(uploads)}")
-        for item in uploads:
-            st.write(f"• {item.name} — {item.size / (1024 * 1024):.1f} MB")
-        st.warning("Files are only selected in this starter interface; no video has been analyzed or rendered yet.")
-    st.button("Prepare production job", disabled=True, help="Enabled after the analysis/render worker is integrated.")
+elif module == "Breakout Radar":
+    st.subheader("New-Channel Breakout Radar")
+    query = st.text_input("Search topic / niche", placeholder="e.g. satisfying restoration shorts")
+    count = st.slider("Public videos to inspect", 5, 25, 10)
+    if st.button("Search YouTube", type="primary", disabled=not query.strip()):
+        with st.spinner("Querying public YouTube data…"):
+            result = search_youtube(query, count)
+        if not result["configured"]:
+            st.warning(result["message"])
+        elif result["items"]:
+            st.caption(result["message"])
+            st.dataframe(result["items"], use_container_width=True, hide_index=True)
+            st.download_button("Download research CSV", to_csv(result["items"]), "breakout_radar.csv", "text/csv")
+        else:
+            st.error(result["message"])
+    st.caption("This searches public videos ranked by views; it does not prove channel growth or new-channel status.")
 
-elif selected_module == "Breakout Radar":
-    niche = st.text_input("Niche or audience", placeholder="e.g. satisfying restoration, US audience")
-    st.selectbox("Research window", ["Last 7 days", "Last 30 days", "Last 90 days"])
-    st.button("Research breakout opportunities", disabled=True, help="Public-source research connector is not integrated yet.")
-    if niche:
-        st.caption(f"Research target: {niche}")
+elif module == "Transformation Planner":
+    st.subheader("AI Transformation Video Planner")
+    concept = st.text_area("Transformation idea", placeholder="e.g. restore a rusted vintage motorcycle")
+    fmt = st.selectbox("Target format", ["YouTube Short (9:16)","YouTube long-form (16:9)","Both"])
+    if st.button("Build transformation plan", type="primary", disabled=not concept.strip()):
+        try:
+            result = plan_transformation(concept, fmt)
+            st.text_area("Production plan", result, height=440)
+            st.download_button("Download plan", result, "transformation_plan.txt", "text/plain")
+        except Exception as exc:
+            st.error(str(exc))
 
-elif selected_module == "Transformation Planner":
-    concept = st.text_area("Transformation concept", placeholder="e.g. abandoned room restored into a modern studio")
-    st.selectbox("Target format", ["YouTube Short (9:16)", "YouTube long-form (16:9)", "Both"])
-    st.button("Build shot plan", disabled=True, help="Planning engine is not integrated yet.")
-    if concept:
-        st.caption("Concept captured locally in this session.")
+elif module == "Story-to-Video Studio":
+    st.subheader("AI Story-to-Video Studio")
+    premise = st.text_area("Story premise", placeholder="Describe the protagonist, conflict, and payoff…")
+    style = st.selectbox("Visual style", ["Cinematic realistic","Stylized 3D","Anime-inspired","Documentary"])
+    if st.button("Create scene plan", type="primary", disabled=not premise.strip()):
+        try:
+            result = plan_story(premise, style)
+            st.text_area("Scene and continuity plan", result, height=460)
+            st.download_button("Download scene plan", result, "story_scene_plan.txt", "text/plain")
+        except Exception as exc:
+            st.error(str(exc))
 
-elif selected_module == "Story-to-Video Studio":
-    story = st.text_area("Story premise", placeholder="Describe the story, characters, and ending...")
-    st.selectbox("Visual style", ["Cinematic realistic", "Stylized 3D", "Anime-inspired", "Documentary"])
-    st.button("Create scene plan", disabled=True, help="Scene generation and consistency engine are not integrated yet.")
-    if story:
-        st.caption(f"Premise length: {len(story)} characters")
+elif module == "Podcast-to-Shorts":
+    st.subheader("Podcast-to-Shorts Factory")
+    st.write("Upload a podcast/video and specify timestamps for speaker moments. The FFmpeg engine exports MP4 clips.")
+    source = st.file_uploader("Upload podcast or interview", type=["mp4","mov","m4v","webm","mp3","wav","m4a"], key="podcast_source")
+    segment_text = st.text_area("Podcast moment timestamps (start_seconds,end_seconds,title)", value="45,75,Strong_Quote\n120,155,Story_Payoff")
+    if st.button("Render podcast clips", type="primary", disabled=source is None):
+        try:
+            segments = parse_segments(segment_text)
+            with st.spinner("Rendering podcast clips…"):
+                archive = render_zip(source, segments, vertical=True)
+            st.success(f"Rendered {len(segments)} podcast clip(s).")
+            st.download_button("Download podcast clips (.zip)", archive, "podcast_shorts.zip", "application/zip")
+        except Exception as exc:
+            st.error(str(exc))
+    st.caption("Automatic transcription, speaker diarization, and automatic best-moment detection are not implemented yet; this workflow uses chosen timestamps.")
 
-elif selected_module == "Podcast-to-Shorts":
-    podcast = st.file_uploader("Upload a podcast/video file", type=["mp4", "mov", "mp3", "wav", "m4a"])
-    st.selectbox("Target clip length", ["20–35 seconds", "35–60 seconds", "60–90 seconds"])
-    st.button("Find standout moments", disabled=True, help="Transcription, speaker analysis, and rendering are not integrated yet.")
-    if podcast:
-        st.write(f"Selected: {podcast.name} ({podcast.size / (1024 * 1024):.1f} MB)")
-
-elif selected_module == "Packaging Lab":
-    topic = st.text_input("Video idea or working title")
-    audience = st.text_input("Target audience", value="US / Tier-1")
-    format_type = st.radio("Format", ["Short", "Long-form"], horizontal=True)
-    st.button("Generate packaging", disabled=True, help="AI packaging provider is not configured yet.")
-    if topic:
-        st.caption(f"Packaging brief: {format_type} · {audience}")
+elif module == "Packaging Lab":
+    st.subheader("Viral Packaging Lab")
+    topic = st.text_area("Video idea / actual content", placeholder="Describe what really happens in the video…")
+    audience = st.text_input("Target audience", "US / Tier-1")
+    fmt = st.radio("Video format", ["Short","Long-form"], horizontal=True)
+    if st.button("Generate title, hook & thumbnail brief", type="primary", disabled=not topic.strip()):
+        try:
+            result = make_packaging(topic, audience, fmt)
+            st.text_area("Packaging set", result, height=400)
+            st.download_button("Download packaging", result, "youtube_packaging.txt", "text/plain")
+        except Exception as exc:
+            st.error(str(exc))
 
 st.divider()
-st.caption("Build status: UI foundation committed. Analysis, AI providers, durable job queue, cloud rendering, and export delivery still need implementation and verification.")
+st.caption("Build status: modular starter with working timestamp-based FFmpeg exports, planning and packaging templates, optional OpenAI generation, and optional YouTube API search. Automatic moment detection, full transcription, generated scene footage, long-form assembly, and background cloud rendering remain future integrations.")
