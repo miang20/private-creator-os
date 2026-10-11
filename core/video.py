@@ -223,13 +223,14 @@ def _quality_settings(output_quality: str) -> tuple[str, str]:
     return "20", "veryfast"
 
 
-def cut_segment(source: str, destination: str, start: float, end: float, vertical: bool = True, subtitle_file: str | None = None, normalize_audio: bool = True, edit_profile: str = "general_visual", dynamic_zoom: bool = False, caption_style: str = "Creator Pop", output_quality: str = "Balanced 1080p", hook_text: str | None = None, zoom_strength: float = 0.04) -> None:
+def cut_segment(source: str, destination: str, start: float, end: float, vertical: bool = True, subtitle_file: str | None = None, normalize_audio: bool = True, edit_profile: str = "general_visual", dynamic_zoom: bool = False, caption_style: str = "Creator Pop", output_quality: str = "Balanced 1080p", hook_text: str | None = None, zoom_strength: float = 0.04, crop_position: float = 0.5) -> None:
     if not ffmpeg_available():
         raise RuntimeError("FFmpeg is not installed. Streamlit Cloud installs it from packages.txt; check deployment logs.")
     if start < 0 or end <= start:
         raise ValueError("Clip end must be after clip start and start cannot be negative.")
     output_size = "1080x1920" if vertical else "1920x1080"
-    vf = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920" if vertical else "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2"
+    crop_position = max(0.0, min(1.0, float(crop_position)))
+    vf = f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920:x='(iw-1080)*{crop_position:.3f}':y='(ih-1920)/2'" if vertical else "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2"
     if dynamic_zoom:
         # Gentle centered zoom pulse; this is not AI subject tracking.
         zoom_strength = max(0.01, min(0.10, float(zoom_strength)))
@@ -279,7 +280,7 @@ def cut_segment(source: str, destination: str, start: float, end: float, vertica
         raise RuntimeError("FFmpeg returned without a usable output file.")
 
 
-def _render_archive(source_path: Path, source_name: str, segments: list[tuple[float, float, str]], vertical: bool, words: list[dict[str, Any]] | None = None, captions: bool = False, normalize_audio: bool = True, notes: str = "", edit_profile: str = "general_visual", dynamic_zoom: bool = False, caption_style: str = "Creator Pop", output_quality: str = "Balanced 1080p", hook_texts: list[str] | None = None, remove_silence: bool = False, zoom_strength: float = 0.04, caption_words_per_beat: int = 3) -> bytes:
+def _render_archive(source_path: Path, source_name: str, segments: list[tuple[float, float, str]], vertical: bool, words: list[dict[str, Any]] | None = None, captions: bool = False, normalize_audio: bool = True, notes: str = "", edit_profile: str = "general_visual", dynamic_zoom: bool = False, caption_style: str = "Creator Pop", output_quality: str = "Balanced 1080p", hook_texts: list[str] | None = None, remove_silence: bool = False, zoom_strength: float = 0.04, caption_words_per_beat: int = 3, crop_position: float = 0.5) -> bytes:
     root = source_path.parent
     outputs = []
     words = words or []
@@ -300,7 +301,7 @@ def _render_archive(source_path: Path, source_name: str, segments: list[tuple[fl
             caption_words = _remap_words_to_intervals(words, intervals)
         subtitle_file = str(subtitle_path) if captions and _write_caption_srt(subtitle_path, caption_words, render_start, render_end, max_words=max(1, min(3, int(caption_words_per_beat)))) else None
         hook_text = hook_texts[index - 1] if hook_texts and index <= len(hook_texts) else None
-        cut_segment(str(render_source), str(output), render_start, render_end, vertical=vertical, subtitle_file=subtitle_file, normalize_audio=normalize_audio, edit_profile=edit_profile, dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality, hook_text=hook_text, zoom_strength=zoom_strength)
+        cut_segment(str(render_source), str(output), render_start, render_end, vertical=vertical, subtitle_file=subtitle_file, normalize_audio=normalize_audio, edit_profile=edit_profile, dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality, hook_text=hook_text, zoom_strength=zoom_strength, crop_position=crop_position)
         outputs.append(output)
     manifest = root / "edit_manifest.txt"
     manifest.write_text("Creator OS edit manifest\nSource: " + source_name + "\nContent-specific edit profile: " + edit_profile + "\nAspect: " + ("9:16 vertical" if vertical else "16:9 landscape") + "\nCaptions burned in: " + ("yes" if captions and words else "no (word timestamps unavailable or captions disabled)") + "\nCaption style: " + caption_style + "\nOutput quality: " + output_quality + "\nDynamic zoom: " + ("on" if dynamic_zoom else "off") + "\nSilence removal: " + ("on" if remove_silence else "off") + "\nAudio normalization: " + ("on" if normalize_audio else "off") + "\nSegments (source timestamps in seconds):\n" + "\n".join(f"{i}. {start:.2f}s–{end:.2f}s | {title}" for i,(start,end,title) in enumerate(segments,1)) + "\n\n" + notes + "\nUse only media you own or have permission to edit.\n", encoding="utf-8")
@@ -312,7 +313,7 @@ def _render_archive(source_path: Path, source_name: str, segments: list[tuple[fl
     return archive.read_bytes()
 
 
-def render_zip(uploaded_file, segments: Iterable[tuple[float, float, str]], vertical: bool = True, dynamic_zoom: bool = False, caption_style: str = "Creator Pop", output_quality: str = "Balanced 1080p", remove_silence: bool = False, zoom_strength: float = 0.04) -> bytes:
+def render_zip(uploaded_file, segments: Iterable[tuple[float, float, str]], vertical: bool = True, dynamic_zoom: bool = False, caption_style: str = "Creator Pop", output_quality: str = "Balanced 1080p", remove_silence: bool = False, zoom_strength: float = 0.04, crop_position: float = 0.5) -> bytes:
     segments = list(segments)
     if not segments:
         raise ValueError("Select at least one clip to render.")
@@ -320,10 +321,10 @@ def render_zip(uploaded_file, segments: Iterable[tuple[float, float, str]], vert
         root = Path(tmp)
         source = root / _safe_name(uploaded_file.name)
         source.write_bytes(uploaded_file.getvalue())
-        return _render_archive(source, uploaded_file.name, segments, vertical=vertical, dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality, remove_silence=remove_silence, zoom_strength=zoom_strength)
+        return _render_archive(source, uploaded_file.name, segments, vertical=vertical, dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality, remove_silence=remove_silence, zoom_strength=zoom_strength, crop_position=crop_position)
 
 
-def render_auto_zip(uploaded_file, moments: list[dict[str, Any]], words: list[dict[str, Any]] | None = None, vertical: bool = True, captions: bool = True, normalize_audio: bool = True, notes: str = "", edit_profile: str = "general_visual", dynamic_zoom: bool = False, caption_style: str = "Creator Pop", output_quality: str = "Balanced 1080p", hook_overlay: bool = False, remove_silence: bool = False, zoom_strength: float = 0.04, caption_words_per_beat: int = 3) -> bytes:
+def render_auto_zip(uploaded_file, moments: list[dict[str, Any]], words: list[dict[str, Any]] | None = None, vertical: bool = True, captions: bool = True, normalize_audio: bool = True, notes: str = "", edit_profile: str = "general_visual", dynamic_zoom: bool = False, caption_style: str = "Creator Pop", output_quality: str = "Balanced 1080p", hook_overlay: bool = False, remove_silence: bool = False, zoom_strength: float = 0.04, caption_words_per_beat: int = 3, crop_position: float = 0.5) -> bytes:
     """Render ranked auto-detected moments and optionally burn local Whisper word captions."""
     segments = [(float(m["start"]), float(m["end"]), str(m.get("title") or f"Moment_{i+1:02d}")) for i, m in enumerate(moments)]
     if not segments:
@@ -337,4 +338,4 @@ def render_auto_zip(uploaded_file, moments: list[dict[str, Any]], words: list[di
             for i, moment in enumerate(moments, 1):
                 text = str(moment.get("transcript_excerpt") or moment.get("title") or f"Moment {i}").strip()
                 hook_texts.append(re.sub(r"\s+", " ", text)[:90])
-        return _render_archive(source, uploaded_file.name, segments, vertical=vertical, words=words, captions=captions, normalize_audio=normalize_audio, notes=notes, edit_profile=edit_profile, dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality, hook_texts=hook_texts, remove_silence=remove_silence, zoom_strength=zoom_strength, caption_words_per_beat=caption_words_per_beat)
+        return _render_archive(source, uploaded_file.name, segments, vertical=vertical, words=words, captions=captions, normalize_audio=normalize_audio, notes=notes, edit_profile=edit_profile, dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality, hook_texts=hook_texts, remove_silence=remove_silence, zoom_strength=zoom_strength, caption_words_per_beat=caption_words_per_beat, crop_position=crop_position)
