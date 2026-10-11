@@ -80,7 +80,33 @@ def _write_caption_srt(path: Path, words: list[dict[str, Any]], start: float, en
     return True
 
 
-def cut_segment(source: str, destination: str, start: float, end: float, vertical: bool = True, subtitle_file: str | None = None, normalize_audio: bool = True, edit_profile: str = "general_visual", dynamic_zoom: bool = False) -> None:
+
+def _caption_force_style(caption_style: str, vertical: bool) -> str:
+    """Return readable caption styling for the selected export preset."""
+    preset = (caption_style or "Creator Pop").strip().lower()
+    if preset == "clean white":
+        color, outline, bold = "&H00FFFFFF", 3, -1
+        font_size, margin_v = (48, 270) if vertical else (38, 70)
+    elif preset == "classic yellow":
+        color, outline, bold = "&H0000FFFF", 3, -1
+        font_size, margin_v = (50, 270) if vertical else (40, 70)
+    else:
+        color, outline, bold = "&H0000FFFF", 5, -1
+        font_size, margin_v = (56, 285) if vertical else (44, 76)
+    style = f"FontName=Arial,FontSize={font_size},Bold={bold},PrimaryColour={color},OutlineColour=&H00000000,BorderStyle=1,Outline={outline},Shadow=2,Alignment=2,MarginV={margin_v}"
+    return style.replace(",", r"\,")
+
+
+def _quality_settings(output_quality: str) -> tuple[str, str]:
+    preset = (output_quality or "Balanced 1080p").strip().lower()
+    if preset == "high quality 1080p":
+        return "18", "medium"
+    if preset == "fast preview":
+        return "23", "veryfast"
+    return "20", "veryfast"
+
+
+def cut_segment(source: str, destination: str, start: float, end: float, vertical: bool = True, subtitle_file: str | None = None, normalize_audio: bool = True, edit_profile: str = "general_visual", dynamic_zoom: bool = False, caption_style: str = "Creator Pop", output_quality: str = "Balanced 1080p") -> None:
     if not ffmpeg_available():
         raise RuntimeError("FFmpeg is not installed. Streamlit Cloud installs it from packages.txt; check deployment logs.")
     if start < 0 or end <= start:
@@ -103,9 +129,7 @@ def cut_segment(source: str, destination: str, start: float, end: float, vertica
         vf += ",eq=contrast=1.06:saturation=0.96"
     if subtitle_file:
         sub = str(Path(subtitle_file).resolve()).replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
-        font_size = 18 if profile in {"podcast_opinion", "tutorial_education"} else 20
-        margin_v = 260 if vertical else 70
-        style = f"FontName=Arial,FontSize={font_size},PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=1,Alignment=2,MarginV={margin_v}".replace(",", "\\,")
+        style = _caption_force_style(caption_style, vertical)
         vf += f",subtitles='{sub}':force_style='{style}'"
     has_video = _has_video_stream(source)
     if has_video:
@@ -114,6 +138,11 @@ def cut_segment(source: str, destination: str, start: float, end: float, vertica
         # Podcast/audio-only uploads receive a clean black vertical or landscape canvas.
         size = "1080x1920" if vertical else "1920x1080"
         command = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", f"color=c=black:s={size}:r=30", "-ss", str(start), "-i", source, "-t", str(end-start), "-map", "0:v:0", "-map", "1:a:0?", "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart"]
+    crf, encoder_preset = _quality_settings(output_quality)
+    if "-crf" in command:
+        command[command.index("-crf") + 1] = crf
+    if "-preset" in command:
+        command[command.index("-preset") + 1] = encoder_preset
     if normalize_audio:
         command[command.index("-c:a"):command.index("-c:a")] = ["-af", "loudnorm=I=-14:LRA=11:TP=-1.5"]
     command.append(destination)
@@ -124,7 +153,7 @@ def cut_segment(source: str, destination: str, start: float, end: float, vertica
         raise RuntimeError("FFmpeg returned without a usable output file.")
 
 
-def _render_archive(source_path: Path, source_name: str, segments: list[tuple[float, float, str]], vertical: bool, words: list[dict[str, Any]] | None = None, captions: bool = False, normalize_audio: bool = True, notes: str = "", edit_profile: str = "general_visual", dynamic_zoom: bool = False) -> bytes:
+def _render_archive(source_path: Path, source_name: str, segments: list[tuple[float, float, str]], vertical: bool, words: list[dict[str, Any]] | None = None, captions: bool = False, normalize_audio: bool = True, notes: str = "", edit_profile: str = "general_visual", dynamic_zoom: bool = False, caption_style: str = "Creator Pop", output_quality: str = "Balanced 1080p") -> bytes:
     root = source_path.parent
     outputs = []
     words = words or []
@@ -132,7 +161,7 @@ def _render_archive(source_path: Path, source_name: str, segments: list[tuple[fl
         output = root / f"{index:02d}_{_safe_name(title)}.mp4"
         subtitle_path = root / f"{index:02d}_{_safe_name(title)}.srt"
         subtitle_file = str(subtitle_path) if captions and _write_caption_srt(subtitle_path, words, start, end) else None
-        cut_segment(str(source_path), str(output), start, end, vertical=vertical, subtitle_file=subtitle_file, normalize_audio=normalize_audio, edit_profile=edit_profile, dynamic_zoom=dynamic_zoom)
+        cut_segment(str(source_path), str(output), start, end, vertical=vertical, subtitle_file=subtitle_file, normalize_audio=normalize_audio, edit_profile=edit_profile, dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality)
         outputs.append(output)
     manifest = root / "edit_manifest.txt"
     manifest.write_text("Creator OS edit manifest\nSource: " + source_name + "\nContent-specific edit profile: " + edit_profile + "\nAspect: " + ("9:16 vertical" if vertical else "16:9 landscape") + "\nCaptions burned in: " + ("yes" if captions and words else "no (word timestamps unavailable or captions disabled)") + "\nAudio normalization: " + ("on" if normalize_audio else "off") + "\nSegments (source timestamps in seconds):\n" + "\n".join(f"{i}. {start:.2f}s–{end:.2f}s | {title}" for i,(start,end,title) in enumerate(segments,1)) + "\n\n" + notes + "\nUse only media you own or have permission to edit.\n", encoding="utf-8")
@@ -144,7 +173,7 @@ def _render_archive(source_path: Path, source_name: str, segments: list[tuple[fl
     return archive.read_bytes()
 
 
-def render_zip(uploaded_file, segments: Iterable[tuple[float, float, str]], vertical: bool = True, dynamic_zoom: bool = False) -> bytes:
+def render_zip(uploaded_file, segments: Iterable[tuple[float, float, str]], vertical: bool = True, dynamic_zoom: bool = False, caption_style: str = "Creator Pop", output_quality: str = "Balanced 1080p") -> bytes:
     segments = list(segments)
     if not segments:
         raise ValueError("Select at least one clip to render.")
@@ -152,10 +181,10 @@ def render_zip(uploaded_file, segments: Iterable[tuple[float, float, str]], vert
         root = Path(tmp)
         source = root / _safe_name(uploaded_file.name)
         source.write_bytes(uploaded_file.getvalue())
-        return _render_archive(source, uploaded_file.name, segments, vertical=vertical, dynamic_zoom=dynamic_zoom)
+        return _render_archive(source, uploaded_file.name, segments, vertical=vertical, dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality)
 
 
-def render_auto_zip(uploaded_file, moments: list[dict[str, Any]], words: list[dict[str, Any]] | None = None, vertical: bool = True, captions: bool = True, normalize_audio: bool = True, notes: str = "", edit_profile: str = "general_visual", dynamic_zoom: bool = False) -> bytes:
+def render_auto_zip(uploaded_file, moments: list[dict[str, Any]], words: list[dict[str, Any]] | None = None, vertical: bool = True, captions: bool = True, normalize_audio: bool = True, notes: str = "", edit_profile: str = "general_visual", dynamic_zoom: bool = False, caption_style: str = "Creator Pop", output_quality: str = "Balanced 1080p") -> bytes:
     """Render ranked auto-detected moments and optionally burn local Whisper word captions."""
     segments = [(float(m["start"]), float(m["end"]), str(m.get("title") or f"Moment_{i+1:02d}")) for i, m in enumerate(moments)]
     if not segments:
@@ -164,4 +193,4 @@ def render_auto_zip(uploaded_file, moments: list[dict[str, Any]], words: list[di
         root = Path(tmp)
         source = root / _safe_name(uploaded_file.name)
         source.write_bytes(uploaded_file.getvalue())
-        return _render_archive(source, uploaded_file.name, segments, vertical=vertical, words=words, captions=captions, normalize_audio=normalize_audio, notes=notes, edit_profile=edit_profile, dynamic_zoom=dynamic_zoom)
+        return _render_archive(source, uploaded_file.name, segments, vertical=vertical, words=words, captions=captions, normalize_audio=normalize_audio, notes=notes, edit_profile=edit_profile, dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality)
