@@ -46,6 +46,8 @@ def test_montage_renders_16_9_and_handles_missing_audio(tmp_path):
         max_seconds_per_clip=10,
         normalize_audio=True,
         output_quality="Fast Preview",
+        enhance_visuals=True,
+        opening_title="TEST HIGHLIGHT",
     )
     assert b"ftyp" in rendered[:32]
     assert info["resolution"] == "1920×1080"
