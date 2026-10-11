@@ -1,6 +1,6 @@
 import shutil
 import subprocess
-from core.video import parse_segments, cut_segment, _write_caption_srt
+from core.video import parse_segments, cut_segment, _write_caption_srt, _caption_force_style, _quality_settings
 from core.packaging import make_packaging, build_caption_plan
 from core.planners import plan_story, plan_transformation
 from core.automation import choose_moments
@@ -89,3 +89,19 @@ def test_ffmpeg_renders_clip_with_burned_captions_and_normalized_audio(tmp_path)
     output = tmp_path / "rendered.mp4"
     cut_segment(str(source), str(output), 0, 3, vertical=True, subtitle_file=str(srt), normalize_audio=True, edit_profile="satisfying_transformation", dynamic_zoom=True)
     assert output.exists() and output.stat().st_size > 1024
+
+
+
+def test_caption_style_presets_are_readable_and_format_aware():
+    creator_vertical = _caption_force_style("Creator Pop", vertical=True)
+    white_landscape = _caption_force_style("Clean White", vertical=False)
+    assert "FontSize=56" in creator_vertical
+    assert "PrimaryColour=&H0000FFFF" in creator_vertical
+    assert "FontSize=38" in white_landscape
+    assert "PrimaryColour=&H00FFFFFF" in white_landscape
+
+
+def test_export_quality_presets_map_to_expected_encoding_cost():
+    assert _quality_settings("High Quality 1080p") == ("18", "medium")
+    assert _quality_settings("Balanced 1080p") == ("20", "veryfast")
+    assert _quality_settings("Fast Preview") == ("23", "veryfast")
