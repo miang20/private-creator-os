@@ -1,6 +1,6 @@
 import shutil
 import subprocess
-from core.video import parse_segments, cut_segment, _write_caption_srt, _caption_force_style, _quality_settings
+from core.video import parse_segments, cut_segment, _write_caption_srt, _caption_force_style, _quality_settings, _active_intervals, _remap_words_to_intervals, _concat_active_intervals
 from core.packaging import make_packaging, build_caption_plan
 from core.planners import plan_story, plan_transformation
 from core.automation import choose_moments
@@ -87,7 +87,7 @@ def test_ffmpeg_renders_clip_with_burned_captions_and_normalized_audio(tmp_path)
     srt = tmp_path / "captions.srt"
     srt.write_text("1\n00:00:00,200 --> 00:00:01,200\nHello there\n", encoding="utf-8")
     output = tmp_path / "rendered.mp4"
-    cut_segment(str(source), str(output), 0, 3, vertical=True, subtitle_file=str(srt), normalize_audio=True, edit_profile="satisfying_transformation", dynamic_zoom=True)
+    cut_segment(str(source), str(output), 0, 3, vertical=True, subtitle_file=str(srt), normalize_audio=True, edit_profile="satisfying_transformation", dynamic_zoom=True, hook_text="WATCH THIS", output_quality="Fast Preview")
     assert output.exists() and output.stat().st_size > 1024
 
 
@@ -105,3 +105,44 @@ def test_export_quality_presets_map_to_expected_encoding_cost():
     assert _quality_settings("High Quality 1080p") == ("18", "medium")
     assert _quality_settings("Balanced 1080p") == ("20", "veryfast")
     assert _quality_settings("Fast Preview") == ("23", "veryfast")
+
+
+
+def test_silence_removal_intervals_preserve_small_cut_margins():
+    intervals = _active_intervals(0.0, 6.0, [(2.0, 4.0)])
+    assert len(intervals) == 2
+    assert intervals[0][0] == 0.0
+    assert intervals[0][1] == 2.08
+    assert intervals[1][0] == 3.92
+    assert intervals[1][1] == 6.0
+
+
+def test_caption_word_timestamps_are_remapped_after_silence_cuts():
+    words = [
+        {"start": 1.0, "end": 1.3, "word": "Keep"},
+        {"start": 2.4, "end": 2.7, "word": "remove"},
+        {"start": 4.2, "end": 4.5, "word": "gap"},
+    ]
+    mapped = _remap_words_to_intervals(words, [(0.0, 2.0), (4.0, 6.0)])
+    assert [item["word"] for item in mapped] == ["Keep", "gap"]
+    assert mapped[1]["start"] == 2.2
+
+
+def test_silence_concat_keeps_video_and_audio_in_sync(tmp_path):
+    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        import pytest
+        pytest.skip("FFmpeg tools are not installed")
+    source = tmp_path / "source_concat.mp4"
+    result = subprocess.run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "lavfi", "-i", "testsrc=size=320x240:rate=25",
+        "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100",
+        "-t", "4", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(source),
+    ], capture_output=True, text=True, timeout=60)
+    if result.returncode != 0:
+        import pytest
+        pytest.skip("FFmpeg build cannot create the synthetic test video")
+    output = tmp_path / "trimmed.mp4"
+    duration = _concat_active_intervals(str(source), [(0.0, 1.0), (2.0, 3.0)], str(output))
+    assert output.exists() and output.stat().st_size > 1024
+    assert duration == 2.0
