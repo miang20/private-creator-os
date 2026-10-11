@@ -332,6 +332,7 @@ def _render_archive(source_path: Path, source_name: str, segments: list[tuple[fl
             render_source = silence_cut
             render_start = 0.0
             caption_words = _remap_words_to_intervals(words, intervals)
+        subtitle_file = str(subtitle_path) if captions and _write_caption_srt(subtitle_path, caption_words, render_start, render_end, max_words=max(1, min(3, int(caption_words_per_beat)))) else None
         if broll_path:
             broll_output = root / f"{index:02d}_{_safe_name(title)}_broll.mp4"
             if _overlay_broll(str(render_source), broll_path, str(broll_output), render_start, render_end):
