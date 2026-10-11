@@ -95,9 +95,11 @@ def render_landscape_montage(
                 filters.append(f"anullsrc=r=44100:cl=stereo,atrim=duration={duration:.3f},asetpts=PTS-STARTPTS[a{i}]")
             concat_labels.append(f"[v{i}][a{i}]")
         filters.append("".join(concat_labels) + f"concat=n={len(inputs)}:v=1:a=1[vout][aout]")
-        command += ["-filter_complex", ";".join(filters), "-map", "[vout]", "-map", "[aout]"]
+        audio_map = "[aout]"
         if normalize_audio:
-            command += ["-af", "loudnorm=I=-14:LRA=11:TP=-1.5"]
+            filters.append("[aout]loudnorm=I=-14:LRA=11:TP=-1.5[afinal]")
+            audio_map = "[afinal]"
+        command += ["-filter_complex", ";".join(filters), "-map", "[vout]", "-map", audio_map]
         command += ["-c:v", "libx264", "-preset", preset, "-crf", crf, "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-r", "30", "-movflags", "+faststart"]
         output = root / "creator_os_landscape_montage.mp4"
         command.append(str(output))
