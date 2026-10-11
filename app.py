@@ -124,6 +124,7 @@ if module == "Repurposing Studio":
         aspect = st.selectbox("Output format", ["Vertical 9:16 (Shorts)", "Landscape 16:9"], key="repurpose_aspect")
     crop_focus_pct = st.slider("Vertical crop focus (0 left · 50 center · 100 right)", 0, 100, 50, key="repurpose_crop_focus", disabled=not aspect.startswith("Vertical"), help="Manual framing position; this is not AI subject tracking.")
     crop_position = crop_focus_pct / 100.0
+    face_tracking = st.checkbox("Auto face-aware framing", value=False, key="repurpose_face_tracking", disabled=not aspect.startswith("Vertical"), help="Tracks detected faces across sampled frames. If no face is found, the manual crop focus is used.")
     c4, c5 = st.columns(2)
     with c4:
         strategy = st.selectbox("Content type / hook routing", CONTENT_TYPES, key="repurpose_strategy", help="Auto uses transcript signals. Select a route manually if the video has little speech or the auto-detection is wrong.")
@@ -160,7 +161,7 @@ if module == "Repurposing Studio":
                      f"Editing rhythm: {analysis['hook_plan']['rhythm']}\nDetection method: {analysis['method']}\n"
                      "Scores are heuristic, not guaranteed viral predictions. Review context and payoff before publishing.")
             with st.spinner("Rendering MP4 clips and preparing ZIP…"):
-                archive = render_auto_zip(source, analysis["moments"], words=analysis["transcript"]["words"], vertical=aspect.startswith("Vertical"), captions=captions, normalize_audio=normalize, notes=notes, edit_profile=analysis["hook_plan"]["key"], dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality, hook_overlay=hook_overlay, remove_silence=remove_silence, zoom_strength=zoom_strength, caption_words_per_beat=caption_words_per_beat, crop_position=crop_position, broll_file=broll_source)
+                archive = render_auto_zip(source, analysis["moments"], words=analysis["transcript"]["words"], vertical=aspect.startswith("Vertical"), captions=captions, normalize_audio=normalize, notes=notes, edit_profile=analysis["hook_plan"]["key"], dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality, hook_overlay=hook_overlay, remove_silence=remove_silence, zoom_strength=zoom_strength, caption_words_per_beat=caption_words_per_beat, crop_position=crop_position, broll_file=broll_source, face_tracking=face_tracking)
             mp4_files = extract_mp4s(archive)
             st.success(f"Rendered {len(mp4_files)} MP4 clip(s) using the {analysis['hook_plan']['label']} route.")
             st.subheader("Download finished MP4 video(s)")
@@ -252,7 +253,8 @@ elif module == "Podcast-to-Shorts":
     p3, p4 = st.columns(2)
     with p3:
         podcast_aspect = st.selectbox("Podcast output", ["Vertical 9:16 (Shorts)", "Landscape 16:9"], key="podcast_aspect")
-    podcast_crop_pct = st.slider("Podcast vertical crop focus", 0, 100, 50, key="podcast_crop_focus", disabled=not podcast_aspect.startswith("Vertical"), help="Manual left/center/right framing; not AI subject tracking.")
+    podcast_crop_pct = st.slider("Podcast vertical crop focus", 0, 100, 50, key="podcast_crop_focus", disabled=not podcast_aspect.startswith("Vertical"), help="Manual left/center/right framing.")
+    podcast_face_tracking = st.checkbox("Auto face-aware framing", value=False, key="podcast_face_tracking", disabled=not podcast_aspect.startswith("Vertical"), help="Tracks detected faces across sampled frames; falls back to center framing when none are detected.")
     with p4:
         podcast_captions = st.checkbox("Burn captions when timestamps exist", value=True, key="podcast_captions")
     p5, p6 = st.columns(2)
@@ -275,7 +277,7 @@ elif module == "Podcast-to-Shorts":
             if not analysis["transcript"]["text"]:
                 st.warning("No speech transcript was produced; review the visual fallback carefully.")
             with st.spinner("Rendering podcast clips…"):
-                archive = render_auto_zip(source, analysis["moments"], words=analysis["transcript"]["words"], vertical=podcast_aspect.startswith("Vertical"), captions=podcast_captions, normalize_audio=True, notes=f"Content route: {analysis['hook_plan']['label']}\nPrimary hook: {analysis['hook_plan']['primary']}", dynamic_zoom=True, caption_style=podcast_caption_style, output_quality=podcast_quality, hook_overlay=podcast_hook_overlay, remove_silence=podcast_remove_silence, zoom_strength=podcast_zoom_pct / 100.0, caption_words_per_beat=podcast_caption_words, crop_position=podcast_crop_pct / 100.0, broll_file=podcast_broll_source)
+                archive = render_auto_zip(source, analysis["moments"], words=analysis["transcript"]["words"], vertical=podcast_aspect.startswith("Vertical"), captions=podcast_captions, normalize_audio=True, notes=f"Content route: {analysis['hook_plan']['label']}\nPrimary hook: {analysis['hook_plan']['primary']}", dynamic_zoom=True, caption_style=podcast_caption_style, output_quality=podcast_quality, hook_overlay=podcast_hook_overlay, remove_silence=podcast_remove_silence, zoom_strength=podcast_zoom_pct / 100.0, caption_words_per_beat=podcast_caption_words, crop_position=podcast_crop_pct / 100.0, broll_file=podcast_broll_source, face_tracking=podcast_face_tracking)
             podcast_mp4s = extract_mp4s(archive)
             st.success(f"Rendered {len(podcast_mp4s)} podcast MP4 clip(s).")
             st.subheader("Download finished podcast MP4(s)")
