@@ -136,7 +136,7 @@ if module == "Repurposing Studio":
             with st.spinner("Rendering MP4 clips and preparing ZIP…"):
                 archive = render_auto_zip(source, analysis["moments"], words=analysis["transcript"]["words"], vertical=aspect.startswith("Vertical"), captions=captions, normalize_audio=normalize, notes=notes, edit_profile=analysis["hook_plan"]["key"])
             st.success(f"Rendered {len(analysis['moments'])} clip(s) using the {analysis['hook_plan']['label']} route.")
-            st.download_button("Download adaptive clip pack (.zip)", archive, file_name="creator_os_adaptive_clips.zip", mime="application/zip", key="download_auto_repurpose")
+            st.download_button("Download adaptive clip pack (.zip)", archive, file_name="creator_os_adaptive_clips.zip", mime="application/zip", key="download_auto_repurpose", on_click="ignore")
             with st.expander("Transcript and evidence"):
                 st.write(analysis["transcript"]["text"][:12000] or "No transcript available.")
                 st.json({"strategy": analysis["hook_plan"], "moments": analysis["moments"]})
