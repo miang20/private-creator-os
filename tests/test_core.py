@@ -167,10 +167,25 @@ def test_auto_render_integrates_captions_zoom_silence_removal_and_mp4_export(tmp
         import pytest
         pytest.skip("FFmpeg build cannot create the synthetic test video")
 
+    broll = tmp_path / "broll.mp4"
+    broll_result = subprocess.run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "lavfi", "-i", "testsrc2=size=160x120:rate=25",
+        "-t", "2", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(broll),
+    ], capture_output=True, text=True, timeout=60)
+    if broll_result.returncode != 0:
+        import pytest
+        pytest.skip("FFmpeg build cannot create synthetic B-roll")
+
     class Upload:
         name = "source_silence.mp4"
         def getvalue(self):
             return source.read_bytes()
+
+    class BrollUpload:
+        name = "broll.mp4"
+        def getvalue(self):
+            return broll.read_bytes()
 
     moments = [{"start": 0.0, "end": 4.0, "title": "Test_Moment", "transcript_excerpt": "Watch this moment"}]
     words = [
@@ -182,7 +197,7 @@ def test_auto_render_integrates_captions_zoom_silence_removal_and_mp4_export(tmp
         Upload(), moments, words=words, vertical=True, captions=True,
         normalize_audio=True, dynamic_zoom=True, caption_style="Creator Pop",
         output_quality="Fast Preview", hook_overlay=True, remove_silence=True,
-        zoom_strength=0.04, caption_words_per_beat=2,
+        zoom_strength=0.04, caption_words_per_beat=2, broll_file=BrollUpload(),
     )
     with zipfile.ZipFile(io.BytesIO(archive), "r") as pack:
         mp4_names = [name for name in pack.namelist() if name.endswith(".mp4")]
