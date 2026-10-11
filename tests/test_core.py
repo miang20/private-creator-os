@@ -44,7 +44,11 @@ def test_strategy_router_uses_distinct_content_archetypes():
 
 
 def test_strategy_score_prioritizes_visual_activity_for_visual_niches():
-    assert strategy_score(0.0, 0.1, 0.1, 0.9, 0, "satisfying_transformation") > strategy_score(0.0, 0.9, 0.9, 0.1, 0, "podcast_opinion")
+    visual_low = strategy_score(0.0, 0.5, 0.5, 0.1, 0, "satisfying_transformation")
+    visual_high = strategy_score(0.0, 0.5, 0.5, 0.9, 0, "satisfying_transformation")
+    speech_low = strategy_score(0.0, 0.5, 0.5, 0.1, 0, "podcast_opinion")
+    speech_high = strategy_score(0.0, 0.5, 0.5, 0.9, 0, "podcast_opinion")
+    assert visual_high - visual_low > speech_high - speech_low
 
 
 def test_local_moment_ranking_returns_bounded_nonduplicate_windows():
