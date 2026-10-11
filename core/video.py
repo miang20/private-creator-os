@@ -80,12 +80,17 @@ def _write_caption_srt(path: Path, words: list[dict[str, Any]], start: float, en
     return True
 
 
-def cut_segment(source: str, destination: str, start: float, end: float, vertical: bool = True, subtitle_file: str | None = None, normalize_audio: bool = True, edit_profile: str = "general_visual") -> None:
+def cut_segment(source: str, destination: str, start: float, end: float, vertical: bool = True, subtitle_file: str | None = None, normalize_audio: bool = True, edit_profile: str = "general_visual", dynamic_zoom: bool = False) -> None:
     if not ffmpeg_available():
         raise RuntimeError("FFmpeg is not installed. Streamlit Cloud installs it from packages.txt; check deployment logs.")
     if start < 0 or end <= start:
         raise ValueError("Clip end must be after clip start and start cannot be negative.")
-    vf = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30,setsar=1" if vertical else "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=30,setsar=1"
+    output_size = "1080x1920" if vertical else "1920x1080"
+    vf = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920" if vertical else "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2"
+    if dynamic_zoom:
+        # Gentle centered zoom pulse; this is not AI subject tracking.
+        vf += f",zoompan=z='1+0.035*(1-cos(2*PI*on/300))/2':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={output_size}:fps=30"
+    vf += ",fps=30,setsar=1"
     # Content-specific finishing: restrained by design so source footage stays truthful.
     profile = (edit_profile or "general_visual").strip().lower()
     if profile in {"funny_unexpected", "sports_action", "reaction_commentary"}:
@@ -119,7 +124,7 @@ def cut_segment(source: str, destination: str, start: float, end: float, vertica
         raise RuntimeError("FFmpeg returned without a usable output file.")
 
 
-def _render_archive(source_path: Path, source_name: str, segments: list[tuple[float, float, str]], vertical: bool, words: list[dict[str, Any]] | None = None, captions: bool = False, normalize_audio: bool = True, notes: str = "", edit_profile: str = "general_visual") -> bytes:
+def _render_archive(source_path: Path, source_name: str, segments: list[tuple[float, float, str]], vertical: bool, words: list[dict[str, Any]] | None = None, captions: bool = False, normalize_audio: bool = True, notes: str = "", edit_profile: str = "general_visual", dynamic_zoom: bool = False) -> bytes:
     root = source_path.parent
     outputs = []
     words = words or []
@@ -127,7 +132,7 @@ def _render_archive(source_path: Path, source_name: str, segments: list[tuple[fl
         output = root / f"{index:02d}_{_safe_name(title)}.mp4"
         subtitle_path = root / f"{index:02d}_{_safe_name(title)}.srt"
         subtitle_file = str(subtitle_path) if captions and _write_caption_srt(subtitle_path, words, start, end) else None
-        cut_segment(str(source_path), str(output), start, end, vertical=vertical, subtitle_file=subtitle_file, normalize_audio=normalize_audio, edit_profile=edit_profile)
+        cut_segment(str(source_path), str(output), start, end, vertical=vertical, subtitle_file=subtitle_file, normalize_audio=normalize_audio, edit_profile=edit_profile, dynamic_zoom=dynamic_zoom)
         outputs.append(output)
     manifest = root / "edit_manifest.txt"
     manifest.write_text("Creator OS edit manifest\nSource: " + source_name + "\nContent-specific edit profile: " + edit_profile + "\nAspect: " + ("9:16 vertical" if vertical else "16:9 landscape") + "\nCaptions burned in: " + ("yes" if captions and words else "no (word timestamps unavailable or captions disabled)") + "\nAudio normalization: " + ("on" if normalize_audio else "off") + "\nSegments (source timestamps in seconds):\n" + "\n".join(f"{i}. {start:.2f}s–{end:.2f}s | {title}" for i,(start,end,title) in enumerate(segments,1)) + "\n\n" + notes + "\nUse only media you own or have permission to edit.\n", encoding="utf-8")
@@ -139,7 +144,7 @@ def _render_archive(source_path: Path, source_name: str, segments: list[tuple[fl
     return archive.read_bytes()
 
 
-def render_zip(uploaded_file, segments: Iterable[tuple[float, float, str]], vertical: bool = True) -> bytes:
+def render_zip(uploaded_file, segments: Iterable[tuple[float, float, str]], vertical: bool = True, dynamic_zoom: bool = False) -> bytes:
     segments = list(segments)
     if not segments:
         raise ValueError("Select at least one clip to render.")
