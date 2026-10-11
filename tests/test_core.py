@@ -85,5 +85,5 @@ def test_ffmpeg_renders_clip_with_burned_captions_and_normalized_audio(tmp_path)
     srt = tmp_path / "captions.srt"
     srt.write_text("1\n00:00:00,200 --> 00:00:01,200\nHello there\n", encoding="utf-8")
     output = tmp_path / "rendered.mp4"
-    cut_segment(str(source), str(output), 0, 3, vertical=True, subtitle_file=str(srt), normalize_audio=True)
+    cut_segment(str(source), str(output), 0, 3, vertical=True, subtitle_file=str(srt), normalize_audio=True, edit_profile="satisfying_transformation")
     assert output.exists() and output.stat().st_size > 1024
