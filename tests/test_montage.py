@@ -47,7 +47,7 @@ def test_montage_renders_16_9_and_handles_missing_audio(tmp_path):
         normalize_audio=True,
         output_quality="Fast Preview",
     )
-    assert rendered[:4] == b"\x00\x00\x00\x18" or b"ftyp" in rendered[:32]
+    assert b"ftyp" in rendered[:32]
     assert info["resolution"] == "1920×1080"
     assert info["fps"] == 30
     assert len(info["clips"]) == 2
