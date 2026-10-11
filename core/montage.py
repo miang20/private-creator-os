@@ -75,6 +75,8 @@ def render_landscape_montage(
     max_seconds_per_clip: int = 30,
     normalize_audio: bool = True,
     output_quality: str = "Balanced 1080p",
+    enhance_visuals: bool = True,
+    opening_title: str = "",
 ) -> tuple[bytes, dict[str, Any]]:
     """Join 2–4 user-supplied video clips into one normalized 16:9 MP4.
 
@@ -110,13 +112,24 @@ def render_landscape_montage(
             command += ["-i", str(path)]
         filters = []
         concat_labels = []
+        title_path = None
+        title_text = str(opening_title or "").replace("\\n", " ").strip()[:90]
+        if title_text:
+            title_path = root / "opening_title.txt"
+            title_path.write_text(title_text, encoding="utf-8")
         for i, (_, _, duration, has_audio) in enumerate(inputs):
-            filters.append(
+            video_filter = (
                 f"[{i}:v:0]trim=duration={duration:.3f},setpts=PTS-STARTPTS,"
                 "scale=1920:1080:force_original_aspect_ratio=decrease,"
                 "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black,"
-                f"fps=30,setsar=1,format=yuv420p[v{i}]"
+                "fps=30,setsar=1,format=yuv420p"
             )
+            if enhance_visuals:
+                video_filter += ",eq=contrast=1.04:saturation=1.05,unsharp=5:5:0.2:3:3:0.0"
+            if i == 0 and title_path:
+                title_file = str(title_path.resolve()).replace("\\\\", "\\\\\\\\").replace(":", "\\\\:")
+                video_filter += f",drawtext=textfile='{title_file}':fontcolor=white:fontsize=48:borderw=3:bordercolor=black:x=(w-text_w)/2:y=h*0.10:enable='lt(t,2.2)'"
+            filters.append(video_filter + f"[v{i}]")
             if has_audio:
                 filters.append(
                     f"[{i}:a:0]atrim=duration={duration:.3f},asetpts=PTS-STARTPTS,"
