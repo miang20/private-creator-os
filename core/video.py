@@ -414,7 +414,7 @@ def _render_archive(source_path: Path, source_name: str, segments: list[tuple[fl
     return archive.read_bytes()
 
 
-def render_zip(uploaded_file, segments: Iterable[tuple[float, float, str]], vertical: bool = True, dynamic_zoom: bool = False, caption_style: str = "Creator Pop", output_quality: str = "Balanced 1080p", remove_silence: bool = False, zoom_strength: float = 0.04, crop_position: float = 0.5) -> bytes:
+def render_zip(uploaded_file, segments: Iterable[tuple[float, float, str]], vertical: bool = True, dynamic_zoom: bool = False, caption_style: str = "Creator Pop", output_quality: str = "Balanced 1080p", remove_silence: bool = False, zoom_strength: float = 0.04, crop_position: float = 0.5, face_tracking: bool = False) -> bytes:
     segments = list(segments)
     if not segments:
         raise ValueError("Select at least one clip to render.")
@@ -422,7 +422,7 @@ def render_zip(uploaded_file, segments: Iterable[tuple[float, float, str]], vert
         root = Path(tmp)
         source = root / _safe_name(uploaded_file.name)
         source.write_bytes(uploaded_file.getvalue())
-        return _render_archive(source, uploaded_file.name, segments, vertical=vertical, dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality, remove_silence=remove_silence, zoom_strength=zoom_strength, crop_position=crop_position)
+        return _render_archive(source, uploaded_file.name, segments, vertical=vertical, dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality, remove_silence=remove_silence, zoom_strength=zoom_strength, crop_position=crop_position, face_tracking=face_tracking)
 
 
 def render_auto_zip(uploaded_file, moments: list[dict[str, Any]], words: list[dict[str, Any]] | None = None, vertical: bool = True, captions: bool = True, normalize_audio: bool = True, notes: str = "", edit_profile: str = "general_visual", dynamic_zoom: bool = False, caption_style: str = "Creator Pop", output_quality: str = "Balanced 1080p", hook_overlay: bool = False, remove_silence: bool = False, zoom_strength: float = 0.04, caption_words_per_beat: int = 3, crop_position: float = 0.5, broll_file: Any | None = None, face_tracking: bool = False) -> bytes:
