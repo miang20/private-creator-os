@@ -1,6 +1,8 @@
+import io
 import shutil
 import subprocess
-from core.video import parse_segments, cut_segment, _write_caption_srt, _caption_force_style, _quality_settings, _active_intervals, _remap_words_to_intervals, _concat_active_intervals
+import zipfile
+from core.video import parse_segments, cut_segment, render_auto_zip, _write_caption_srt, _caption_force_style, _quality_settings, _active_intervals, _remap_words_to_intervals, _concat_active_intervals
 from core.packaging import make_packaging, build_caption_plan
 from core.planners import plan_story, plan_transformation
 from core.automation import choose_moments
@@ -146,3 +148,50 @@ def test_silence_concat_keeps_video_and_audio_in_sync(tmp_path):
     duration = _concat_active_intervals(str(source), [(0.0, 1.0), (2.0, 3.0)], str(output))
     assert output.exists() and output.stat().st_size > 1024
     assert duration == 2.0
+
+
+
+def test_auto_render_integrates_captions_zoom_silence_removal_and_mp4_export(tmp_path):
+    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        import pytest
+        pytest.skip("FFmpeg tools are not installed")
+    source = tmp_path / "source_silence.mp4"
+    result = subprocess.run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "lavfi", "-i", "testsrc=size=320x240:rate=25",
+        "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100",
+        "-af", "volume=volume=0:enable='between(t,1,2)'",
+        "-t", "4", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(source),
+    ], capture_output=True, text=True, timeout=60)
+    if result.returncode != 0:
+        import pytest
+        pytest.skip("FFmpeg build cannot create the synthetic test video")
+
+    class Upload:
+        name = "source_silence.mp4"
+        def getvalue(self):
+            return source.read_bytes()
+
+    moments = [{"start": 0.0, "end": 4.0, "title": "Test_Moment", "transcript_excerpt": "Watch this moment"}]
+    words = [
+        {"start": 0.2, "end": 0.5, "word": "Watch"},
+        {"start": 2.2, "end": 2.5, "word": "this"},
+        {"start": 2.5, "end": 2.8, "word": "moment"},
+    ]
+    archive = render_auto_zip(
+        Upload(), moments, words=words, vertical=True, captions=True,
+        normalize_audio=True, dynamic_zoom=True, caption_style="Creator Pop",
+        output_quality="Fast Preview", hook_overlay=True, remove_silence=True,
+        zoom_strength=0.04, caption_words_per_beat=2,
+    )
+    with zipfile.ZipFile(io.BytesIO(archive), "r") as pack:
+        mp4_names = [name for name in pack.namelist() if name.endswith(".mp4")]
+        assert len(mp4_names) == 1
+        rendered = tmp_path / "rendered_integration.mp4"
+        rendered.write_bytes(pack.read(mp4_names[0]))
+    probe = subprocess.run([
+        "ffprobe", "-v", "error", "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1", str(rendered),
+    ], capture_output=True, text=True, timeout=30)
+    assert probe.returncode == 0
+    assert 2.0 < float(probe.stdout.strip()) < 4.0
