@@ -131,6 +131,7 @@ if module == "Repurposing Studio":
         captions = st.checkbox("Burn word-timed captions when available", value=True, key="repurpose_captions", disabled=not transcribe)
     with c7:
         normalize = st.checkbox("Normalize audio", value=True, key="repurpose_normalize")
+    dynamic_zoom = st.checkbox("Apply subtle dynamic zoom (centered)", value=True, key="repurpose_dynamic_zoom", help="Adds gentle movement; it does not track a person or object.")
     if st.button("Analyze → choose hook strategy → render clips", type="primary", disabled=source is None, key="auto_repurpose"):
         try:
             with st.spinner("Analyzing local signals. First transcription may download model weights and take several minutes…"):
@@ -145,7 +146,7 @@ if module == "Repurposing Studio":
                      f"Editing rhythm: {analysis['hook_plan']['rhythm']}\nDetection method: {analysis['method']}\n"
                      "Scores are heuristic, not guaranteed viral predictions. Review context and payoff before publishing.")
             with st.spinner("Rendering MP4 clips and preparing ZIP…"):
-                archive = render_auto_zip(source, analysis["moments"], words=analysis["transcript"]["words"], vertical=aspect.startswith("Vertical"), captions=captions, normalize_audio=normalize, notes=notes, edit_profile=analysis["hook_plan"]["key"])
+                archive = render_auto_zip(source, analysis["moments"], words=analysis["transcript"]["words"], vertical=aspect.startswith("Vertical"), captions=captions, normalize_audio=normalize, notes=notes, edit_profile=analysis["hook_plan"]["key"], dynamic_zoom=dynamic_zoom)
             mp4_files = extract_mp4s(archive)
             st.success(f"Rendered {len(mp4_files)} MP4 clip(s) using the {analysis['hook_plan']['label']} route.")
             st.subheader("Download finished MP4 video(s)")
@@ -170,7 +171,7 @@ if module == "Repurposing Studio":
     if st.button("Render manual clips", disabled=manual_source is None, key="manual_render"):
         try:
             segments = parse_segments(segment_text)
-            archive = render_zip(manual_source, segments, vertical=aspect_manual.startswith("Vertical"))
+            archive = render_zip(manual_source, segments, vertical=aspect_manual.startswith("Vertical"), dynamic_zoom=dynamic_zoom)
             for mp4_name, mp4_data in extract_mp4s(archive):
                 st.download_button(
                     f"Download {mp4_name}", data=mp4_data, file_name=mp4_name,
