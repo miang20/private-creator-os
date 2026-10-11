@@ -169,6 +169,39 @@ def _remap_words_to_intervals(words: list[dict[str, Any]], intervals: list[tuple
     return sorted(mapped, key=lambda item: item["start"])
 
 
+
+def _overlay_broll(source: str, broll: str, destination: str, start: float, end: float) -> bool:
+    """Insert short full-frame B-roll cutaways while retaining the source audio."""
+    duration = end - start
+    if duration < 3.3 or not _has_video_stream(broll):
+        return False
+    cutaways = [t for t in (2.5 + 4.0 * i for i in range(100)) if t + 0.8 < duration]
+    if not cutaways:
+        return False
+    enable = "+".join(f"between(t,{t:.2f},{t + 0.8:.2f})" for t in cutaways)
+    if _has_video_stream(source):
+        command = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                   "-ss", str(start), "-t", str(duration), "-i", source,
+                   "-stream_loop", "-1", "-i", broll,
+                   "-filter_complex",
+                   f"[1:v][0:v]scale2ref=w=iw:h=ih[broll][base];[base][broll]overlay=shortest=1:enable='{enable}'[vout]",
+                   "-map", "[vout]", "-map", "0:a?"]
+    else:
+        command = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                   "-f", "lavfi", "-i", f"color=c=black:s=1080x1920:r=30:d={duration}",
+                   "-ss", str(start), "-t", str(duration), "-i", source,
+                   "-stream_loop", "-1", "-i", broll,
+                   "-filter_complex",
+                   f"[2:v][0:v]scale2ref=w=iw:h=ih[broll][base];[base][broll]overlay=shortest=1:enable='{enable}'[vout]",
+                   "-map", "[vout]", "-map", "1:a?"]
+    command += ["-t", str(duration), "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18",
+                "-c:a", "aac", "-b:a", "256k", "-movflags", "+faststart", destination]
+    result = subprocess.run(command, capture_output=True, text=True, timeout=900)
+    if result.returncode != 0 or not os.path.exists(destination) or os.path.getsize(destination) < 1024:
+        raise RuntimeError("B-roll cutaway render failed: " + (result.stderr[-1800:] or "No usable output."))
+    return True
+
+
 def _concat_active_intervals(source: str, intervals: list[tuple[float, float]], destination: str) -> float:
     """Concatenate non-silent intervals, keeping video and audio synchronized."""
     if not intervals:
@@ -280,7 +313,7 @@ def cut_segment(source: str, destination: str, start: float, end: float, vertica
         raise RuntimeError("FFmpeg returned without a usable output file.")
 
 
-def _render_archive(source_path: Path, source_name: str, segments: list[tuple[float, float, str]], vertical: bool, words: list[dict[str, Any]] | None = None, captions: bool = False, normalize_audio: bool = True, notes: str = "", edit_profile: str = "general_visual", dynamic_zoom: bool = False, caption_style: str = "Creator Pop", output_quality: str = "Balanced 1080p", hook_texts: list[str] | None = None, remove_silence: bool = False, zoom_strength: float = 0.04, caption_words_per_beat: int = 3, crop_position: float = 0.5) -> bytes:
+def _render_archive(source_path: Path, source_name: str, segments: list[tuple[float, float, str]], vertical: bool, words: list[dict[str, Any]] | None = None, captions: bool = False, normalize_audio: bool = True, notes: str = "", edit_profile: str = "general_visual", dynamic_zoom: bool = False, caption_style: str = "Creator Pop", output_quality: str = "Balanced 1080p", hook_texts: list[str] | None = None, remove_silence: bool = False, zoom_strength: float = 0.04, caption_words_per_beat: int = 3, crop_position: float = 0.5, broll_path: str | None = None) -> bytes:
     root = source_path.parent
     outputs = []
     words = words or []
@@ -299,7 +332,14 @@ def _render_archive(source_path: Path, source_name: str, segments: list[tuple[fl
             render_source = silence_cut
             render_start = 0.0
             caption_words = _remap_words_to_intervals(words, intervals)
-        subtitle_file = str(subtitle_path) if captions and _write_caption_srt(subtitle_path, caption_words, render_start, render_end, max_words=max(1, min(3, int(caption_words_per_beat)))) else None
+        if broll_path:
+            broll_output = root / f"{index:02d}_{_safe_name(title)}_broll.mp4"
+            if _overlay_broll(str(render_source), broll_path, str(broll_output), render_start, render_end):
+                if not did_remove:
+                    caption_words = _remap_words_to_intervals(words, [(start, end)])
+                    subtitle_file = str(subtitle_path) if captions and _write_caption_srt(subtitle_path, caption_words, 0.0, end - start, max_words=max(1, min(3, int(caption_words_per_beat)))) else None
+                render_source = broll_output
+                render_start, render_end = 0.0, render_end - render_start
         hook_text = hook_texts[index - 1] if hook_texts and index <= len(hook_texts) else None
         cut_segment(str(render_source), str(output), render_start, render_end, vertical=vertical, subtitle_file=subtitle_file, normalize_audio=normalize_audio, edit_profile=edit_profile, dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality, hook_text=hook_text, zoom_strength=zoom_strength, crop_position=crop_position)
         outputs.append(output)
@@ -324,7 +364,7 @@ def render_zip(uploaded_file, segments: Iterable[tuple[float, float, str]], vert
         return _render_archive(source, uploaded_file.name, segments, vertical=vertical, dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality, remove_silence=remove_silence, zoom_strength=zoom_strength, crop_position=crop_position)
 
 
-def render_auto_zip(uploaded_file, moments: list[dict[str, Any]], words: list[dict[str, Any]] | None = None, vertical: bool = True, captions: bool = True, normalize_audio: bool = True, notes: str = "", edit_profile: str = "general_visual", dynamic_zoom: bool = False, caption_style: str = "Creator Pop", output_quality: str = "Balanced 1080p", hook_overlay: bool = False, remove_silence: bool = False, zoom_strength: float = 0.04, caption_words_per_beat: int = 3, crop_position: float = 0.5) -> bytes:
+def render_auto_zip(uploaded_file, moments: list[dict[str, Any]], words: list[dict[str, Any]] | None = None, vertical: bool = True, captions: bool = True, normalize_audio: bool = True, notes: str = "", edit_profile: str = "general_visual", dynamic_zoom: bool = False, caption_style: str = "Creator Pop", output_quality: str = "Balanced 1080p", hook_overlay: bool = False, remove_silence: bool = False, zoom_strength: float = 0.04, caption_words_per_beat: int = 3, crop_position: float = 0.5, broll_file: Any | None = None) -> bytes:
     """Render ranked auto-detected moments and optionally burn local Whisper word captions."""
     segments = [(float(m["start"]), float(m["end"]), str(m.get("title") or f"Moment_{i+1:02d}")) for i, m in enumerate(moments)]
     if not segments:
@@ -333,9 +373,14 @@ def render_auto_zip(uploaded_file, moments: list[dict[str, Any]], words: list[di
         root = Path(tmp)
         source = root / _safe_name(uploaded_file.name)
         source.write_bytes(uploaded_file.getvalue())
+        broll_path = None
+        if broll_file is not None:
+            broll_path_obj = root / ("broll_" + _safe_name(broll_file.name))
+            broll_path_obj.write_bytes(broll_file.getvalue())
+            broll_path = str(broll_path_obj)
         hook_texts = []
         if hook_overlay:
             for i, moment in enumerate(moments, 1):
                 text = str(moment.get("transcript_excerpt") or moment.get("title") or f"Moment {i}").strip()
                 hook_texts.append(re.sub(r"\s+", " ", text)[:90])
-        return _render_archive(source, uploaded_file.name, segments, vertical=vertical, words=words, captions=captions, normalize_audio=normalize_audio, notes=notes, edit_profile=edit_profile, dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality, hook_texts=hook_texts, remove_silence=remove_silence, zoom_strength=zoom_strength, caption_words_per_beat=caption_words_per_beat, crop_position=crop_position)
+        return _render_archive(source, uploaded_file.name, segments, vertical=vertical, words=words, captions=captions, normalize_audio=normalize_audio, notes=notes, edit_profile=edit_profile, dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality, hook_texts=hook_texts, remove_silence=remove_silence, zoom_strength=zoom_strength, caption_words_per_beat=caption_words_per_beat, crop_position=crop_position, broll_path=broll_path)
