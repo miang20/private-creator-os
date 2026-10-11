@@ -1,26 +1,28 @@
 # Creator OS
 
-Personal creator workspace with six modules: timestamp-based video repurposing, optional official YouTube research, transformation planning, story-to-video scene planning, podcast clip export, and YouTube packaging.
+A free-first personal creator workspace. No paid AI API key or per-video AI API fee is required. The app uses local open-source transcription where available, deterministic local heuristics, and FFmpeg rendering. It does not bypass the CPU/RAM/runtime limits of the hosting platform.
 
-## Deploy on Streamlit Community Cloud
+## Deploy
 
-1. Open https://share.streamlit.io/
-2. Connect the GitHub account that owns this repository.
-3. Select repository `miang20/private-creator-os`, branch `main`, main file `app.py`.
-4. No OpenAI key or paid AI API is required. The planner, packaging, and caption-beat helpers use deterministic local templates/rules.
-5. Optional: add `YOUTUBE_API_KEY` in Streamlit Secrets to use the official YouTube Data API. Its free daily quota and access rules still apply.
+1. Open https://share.streamlit.io/.
+2. Connect the GitHub account that owns `miang20/private-creator-os`.
+3. Select branch `main` and main file `app.py`.
+4. No OpenAI API key is needed. First local transcription may download the small Whisper model weights and may take several minutes.
+5. Optional: add `YOUTUBE_API_KEY` in Streamlit Secrets to use official YouTube Data API research. Its free daily quota still applies.
 
-Never commit API keys into the repository. This project is designed to avoid paid AI API charges, not to bypass host resource limits or official service quotas.
+Never commit API keys into source code.
 
-## What works in this build
+## Current features
 
-- Dashboard for all six studios.
-- Timestamp-based video clipping to vertical 9:16 or landscape 16:9 MP4 using FFmpeg.
-- ZIP export with rendered clips and an edit manifest.
-- Local template-based story and transformation plans.
-- Local template-based packaging and caption beat splitting.
-- Optional official YouTube Data API search with public view-count snapshots.
+- Automatic clip candidates ranked using local Whisper transcript density, simple hook-word heuristics, and FFmpeg scene-change signals.
+- One-click analysis and export for uploaded video and podcast/audio sources.
+- MP4 output at 9:16 or 16:9, 30 fps, H.264/AAC, and optional loudness normalization.
+- Word-timed captions burned in when local transcription supplies word timestamps.
+- ZIP export with MP4s and edit manifest.
+- Manual timestamp mode for precise cuts.
+- Local template-based story, transformation, packaging, and caption-beat helpers.
+- Optional official YouTube Data API research.
 
-## Current limitations
+## Important limits
 
-This is a free-first foundation, not a fully automatic video factory. Automatic transcript extraction, automatic best-moment detection, speaker diarization, contextual B-roll, word-synced captions burned into the video, generated scene footage, and a persistent background render queue are not yet connected. Streamlit hosting has CPU, memory, upload, and runtime limits, so large videos may not process reliably. YouTube Data API research is optional but quota-limited. Use media you own or have permission to edit.
+This is not unlimited cloud compute. Local Whisper inference can be slow or fail on free-host memory/time limits; the app attempts to fall back to visual scene-change ranking. Automatic ranking is heuristic and needs human review. Scene changes do not equal semantic highlights. Audio-only podcast exports use a plain background unless you add visual footage. This app does not generate finished AI footage, perform speaker diarization, or promise viral performance. YouTube Data API research is optional but quota-limited. Use media you own or have permission to edit.

@@ -40,6 +40,13 @@ def _safe_name(value: str) -> str:
     return (re.sub(r"[^A-Za-z0-9_-]+", "_", value).strip("_") or "clip")[:60]
 
 
+def _has_video_stream(source: str) -> bool:
+    if not shutil.which("ffprobe"):
+        return True
+    result = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_type", "-of", "csv=p=0", source], capture_output=True, text=True, timeout=20)
+    return result.returncode == 0 and "video" in result.stdout.lower()
+
+
 def _srt_time(seconds: float) -> str:
     ms = max(0, int(round(seconds * 1000)))
     hours, ms = divmod(ms, 3_600_000)
@@ -81,10 +88,15 @@ def cut_segment(source: str, destination: str, start: float, end: float, vertica
     vf = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30,setsar=1" if vertical else "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=30,setsar=1"
     if subtitle_file:
         sub = str(Path(subtitle_file).resolve()).replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
-        style = "FontName=Arial,FontSize=18,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=1,Alignment=2,MarginV=300"
-        style = style.replace(",", "\\,")
+        style = "FontName=Arial,FontSize=18,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=1,Alignment=2,MarginV=300".replace(",", "\\,")
         vf += f",subtitles='{sub}':force_style='{style}'"
-    command = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-ss", str(start), "-i", source, "-t", str(end-start), "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"]
+    has_video = _has_video_stream(source)
+    if has_video:
+        command = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-ss", str(start), "-i", source, "-t", str(end-start), "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"]
+    else:
+        # Podcast/audio-only uploads receive a clean black vertical or landscape canvas.
+        size = "1080x1920" if vertical else "1920x1080"
+        command = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", f"color=c=black:s={size}:r=30", "-ss", str(start), "-i", source, "-t", str(end-start), "-map", "0:v:0", "-map", "1:a:0?", "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart"]
     if normalize_audio:
         command[command.index("-c:a"):command.index("-c:a")] = ["-af", "loudnorm=I=-14:LRA=11:TP=-1.5"]
     command.append(destination)
