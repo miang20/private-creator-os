@@ -32,7 +32,7 @@ Never commit API keys into source code.
 ## OpusClip-style free workflow
 
 - **Shorts factory:** upload a long video, rank candidate moments with local transcript + visual scene signals, and export several vertical 9:16 MP4s with optional captions, hook overlays, silence removal, face-aware crop, audio normalization, and direct in-app previews/downloads.
-- **16:9 Multi-Clip Editor:** upload 2–4 clips in the exact timeline order (one main clip plus 1–3 extras). Each clip is normalized to 1920×1080, 30 fps and square pixels, clips without audio receive a silent track, and the app joins them into one landscape MP4 with optional loudness normalization. The finished video is previewable in the app and downloadable as a standalone MP4.
+- **16:9 Multi-Clip Editor:** upload 2–4 clips in the exact timeline order (one main clip plus 1–3 extras). Each clip is normalized to 1920×1080, 30 fps and square pixels, clips without audio receive a silent track, and the app joins them into one landscape MP4 with optional loudness normalization, subtle contrast/color/sharpness polish, and an opening title overlay. The finished video is previewable in the app and downloadable as a standalone MP4.
 - **No paid AI API required:** transcription is local; clip ranking uses local heuristics and FFmpeg scene signals. Hosted CPU, RAM, file-upload and execution limits still apply.
 
 ## Important limits
