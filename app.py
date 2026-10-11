@@ -221,6 +221,8 @@ elif module == "16:9 Multi-Clip Editor":
     with m2:
         montage_quality = st.selectbox("Landscape export quality", ["Balanced 1080p", "High Quality 1080p", "Fast Preview"], index=0, key="montage_quality")
     montage_normalize = st.checkbox("Normalize final audio to a consistent loudness", value=True, key="montage_normalize")
+    montage_enhance = st.checkbox("Apply subtle visual polish (contrast, color and sharpness)", value=True, key="montage_enhance")
+    montage_title = st.text_input("Optional opening title / hook", max_chars=90, key="montage_title", placeholder="e.g. THIS GOT UNEXPECTED…")
     if uploads:
         st.caption(f"{len(uploads)} clip(s) selected. Use 2–4 clips for this workflow.")
         st.dataframe(
@@ -235,6 +237,8 @@ elif module == "16:9 Multi-Clip Editor":
                     max_seconds_per_clip=montage_clip_limit,
                     normalize_audio=montage_normalize,
                     output_quality=montage_quality,
+                    enhance_visuals=montage_enhance,
+                    opening_title=montage_title,
                 )
             st.success("Landscape video rendered and validated.")
             q1, q2, q3 = st.columns(3)
