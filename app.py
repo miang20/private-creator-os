@@ -114,6 +114,7 @@ if module == "Repurposing Studio":
     st.subheader("Adaptive Repurposing Studio")
     st.write("Upload a video. The local engine routes it to a content-specific hook/edit strategy, ranks moments with different weights per content type, then renders the clips. Review the suggested route before publishing.")
     source = st.file_uploader("Upload source video", type=["mp4", "mov", "m4v", "webm", "mkv"], key="repurpose_source")
+    broll_source = st.file_uploader("Optional B-roll video for short cutaways", type=["mp4", "mov", "m4v", "webm", "mkv"], key="repurpose_broll", help="Use relevant footage you own or have permission to use. It appears briefly every few seconds while source audio continues.")
     c1, c2, c3 = st.columns(3)
     with c1:
         clip_count = st.slider("Clips to export", 1, 10, 5, key="repurpose_count")
@@ -159,7 +160,7 @@ if module == "Repurposing Studio":
                      f"Editing rhythm: {analysis['hook_plan']['rhythm']}\nDetection method: {analysis['method']}\n"
                      "Scores are heuristic, not guaranteed viral predictions. Review context and payoff before publishing.")
             with st.spinner("Rendering MP4 clips and preparing ZIP…"):
-                archive = render_auto_zip(source, analysis["moments"], words=analysis["transcript"]["words"], vertical=aspect.startswith("Vertical"), captions=captions, normalize_audio=normalize, notes=notes, edit_profile=analysis["hook_plan"]["key"], dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality, hook_overlay=hook_overlay, remove_silence=remove_silence, zoom_strength=zoom_strength, caption_words_per_beat=caption_words_per_beat, crop_position=crop_position)
+                archive = render_auto_zip(source, analysis["moments"], words=analysis["transcript"]["words"], vertical=aspect.startswith("Vertical"), captions=captions, normalize_audio=normalize, notes=notes, edit_profile=analysis["hook_plan"]["key"], dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality, hook_overlay=hook_overlay, remove_silence=remove_silence, zoom_strength=zoom_strength, caption_words_per_beat=caption_words_per_beat, crop_position=crop_position, broll_file=broll_source)
             mp4_files = extract_mp4s(archive)
             st.success(f"Rendered {len(mp4_files)} MP4 clip(s) using the {analysis['hook_plan']['label']} route.")
             st.subheader("Download finished MP4 video(s)")
@@ -242,6 +243,7 @@ elif module == "Podcast-to-Shorts":
     st.subheader("Podcast-to-Shorts Factory")
     st.write("Transcribe locally, select speech-led moments with a podcast-specific scoring route, add word-timed captions, normalize audio, and export clips.")
     source = st.file_uploader("Upload podcast, interview, or audio", type=["mp4", "mov", "m4v", "webm", "mkv", "mp3", "wav", "m4a"], key="podcast_source")
+    podcast_broll_source = st.file_uploader("Optional B-roll video for podcast cutaways", type=["mp4", "mov", "m4v", "webm", "mkv"], key="podcast_broll")
     p1, p2 = st.columns(2)
     with p1:
         count = st.slider("Podcast clips", 1, 10, 5, key="podcast_count")
@@ -273,7 +275,7 @@ elif module == "Podcast-to-Shorts":
             if not analysis["transcript"]["text"]:
                 st.warning("No speech transcript was produced; review the visual fallback carefully.")
             with st.spinner("Rendering podcast clips…"):
-                archive = render_auto_zip(source, analysis["moments"], words=analysis["transcript"]["words"], vertical=podcast_aspect.startswith("Vertical"), captions=podcast_captions, normalize_audio=True, notes=f"Content route: {analysis['hook_plan']['label']}\nPrimary hook: {analysis['hook_plan']['primary']}", dynamic_zoom=True, caption_style=podcast_caption_style, output_quality=podcast_quality, hook_overlay=podcast_hook_overlay, remove_silence=podcast_remove_silence, zoom_strength=podcast_zoom_pct / 100.0, caption_words_per_beat=podcast_caption_words, crop_position=podcast_crop_pct / 100.0)
+                archive = render_auto_zip(source, analysis["moments"], words=analysis["transcript"]["words"], vertical=podcast_aspect.startswith("Vertical"), captions=podcast_captions, normalize_audio=True, notes=f"Content route: {analysis['hook_plan']['label']}\nPrimary hook: {analysis['hook_plan']['primary']}", dynamic_zoom=True, caption_style=podcast_caption_style, output_quality=podcast_quality, hook_overlay=podcast_hook_overlay, remove_silence=podcast_remove_silence, zoom_strength=podcast_zoom_pct / 100.0, caption_words_per_beat=podcast_caption_words, crop_position=podcast_crop_pct / 100.0, broll_file=podcast_broll_source)
             podcast_mp4s = extract_mp4s(archive)
             st.success(f"Rendered {len(podcast_mp4s)} podcast MP4 clip(s).")
             st.subheader("Download finished podcast MP4(s)")
