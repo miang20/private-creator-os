@@ -1,0 +1,5 @@
+# Creator OS upload limits (MB).
+# Allows large source videos such as 239 MB uploads.
+[server]
+maxUploadSize = 500
+maxMessageSize = 500
