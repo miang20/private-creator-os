@@ -184,7 +184,7 @@ def _overlay_broll(source: str, broll: str, destination: str, start: float, end:
                    "-ss", str(start), "-t", str(duration), "-i", source,
                    "-stream_loop", "-1", "-i", broll,
                    "-filter_complex",
-                   f"[1:v][0:v]scale2ref=w=iw:h=ih[broll][base];[base][broll]overlay=shortest=1:enable='{enable}'[vout]",
+                   f"[1:v][0:v]scale2ref=w=rw:h=rh[broll][base];[base][broll]overlay=shortest=1:enable='{enable}'[vout]",
                    "-map", "[vout]", "-map", "0:a?"]
     else:
         command = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
@@ -192,7 +192,7 @@ def _overlay_broll(source: str, broll: str, destination: str, start: float, end:
                    "-ss", str(start), "-t", str(duration), "-i", source,
                    "-stream_loop", "-1", "-i", broll,
                    "-filter_complex",
-                   f"[2:v][0:v]scale2ref=w=iw:h=ih[broll][base];[base][broll]overlay=shortest=1:enable='{enable}'[vout]",
+                   f"[2:v][0:v]scale2ref=w=rw:h=rh[broll][base];[base][broll]overlay=shortest=1:enable='{enable}'[vout]",
                    "-map", "[vout]", "-map", "1:a?"]
     command += ["-t", str(duration), "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18",
                 "-c:a", "aac", "-b:a", "256k", "-movflags", "+faststart", destination]
