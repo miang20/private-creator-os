@@ -153,8 +153,8 @@ def analyze_media(source: str, count: int = 5, clip_length: int = 30, transcribe
         except Exception as exc:
             warning = str(exc)
     strategy = classify_content(transcript["text"], scenes, duration, requested_strategy)
-    moments = choose_moments(duration, scenes, transcript["segments"], count=count, clip_length=clip_length, requested_strategy=strategy["label"])
+    moments = choose_moments(duration, scenes, transcript["segments"], count=count, clip_length=clip_length, requested_strategy=requested_strategy)
     method = "local transcript + scene changes" if transcript["segments"] and scenes else "local transcript" if transcript["segments"] else "visual scene-change fallback"
     analysis = {"duration": duration, "scene_changes": scenes, "transcript": transcript, "moments": moments, "warning": warning, "method": method}
-    analysis["hook_plan"] = build_hook_plan(analysis, strategy["label"])
+    analysis["hook_plan"] = build_hook_plan(analysis, requested_strategy)
     return analysis

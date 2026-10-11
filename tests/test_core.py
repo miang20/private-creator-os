@@ -38,6 +38,8 @@ def test_strategy_router_uses_distinct_content_archetypes():
     assert podcast["key"] == "podcast_opinion"
     assert tutorial["key"] == "tutorial_education"
     assert satisfying["key"] == "satisfying_transformation"
+    assert funny["mode"] == "transcript-signals"
+    assert funny["confidence"] < 1.0
     assert len(set([funny["primary"], podcast["primary"], tutorial["primary"], satisfying["primary"]])) == 4
 
 
