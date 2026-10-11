@@ -2,6 +2,7 @@ from __future__ import annotations
 import csv
 import io
 import tempfile
+import zipfile
 from pathlib import Path
 import streamlit as st
 
@@ -24,6 +25,16 @@ def to_csv(items):
     writer.writeheader()
     writer.writerows(items)
     return buf.getvalue()
+
+
+def extract_mp4s(archive: bytes) -> list[tuple[str, bytes]]:
+    """Read rendered MP4s from the internal render archive for direct downloads."""
+    with zipfile.ZipFile(io.BytesIO(archive), "r") as rendered_pack:
+        return [
+            (Path(name).name, rendered_pack.read(name))
+            for name in rendered_pack.namelist()
+            if name.lower().endswith(".mp4")
+        ]
 
 
 def analyze_uploaded(source, count: int, clip_length: int, transcribe: bool, model_size: str = "tiny", strategy: str = "Auto"):
@@ -135,8 +146,16 @@ if module == "Repurposing Studio":
                      "Scores are heuristic, not guaranteed viral predictions. Review context and payoff before publishing.")
             with st.spinner("Rendering MP4 clips and preparing ZIP…"):
                 archive = render_auto_zip(source, analysis["moments"], words=analysis["transcript"]["words"], vertical=aspect.startswith("Vertical"), captions=captions, normalize_audio=normalize, notes=notes, edit_profile=analysis["hook_plan"]["key"])
-            st.success(f"Rendered {len(analysis['moments'])} clip(s) using the {analysis['hook_plan']['label']} route.")
-            st.download_button("Download adaptive clip pack (.zip)", archive, file_name="creator_os_adaptive_clips.zip", mime="application/zip", key="download_auto_repurpose", on_click="ignore")
+            mp4_files = extract_mp4s(archive)
+            st.success(f"Rendered {len(mp4_files)} MP4 clip(s) using the {analysis['hook_plan']['label']} route.")
+            st.subheader("Download finished MP4 video(s)")
+            for mp4_name, mp4_data in mp4_files:
+                st.download_button(
+                    f"Download {mp4_name}", data=mp4_data, file_name=mp4_name,
+                    mime="video/mp4", key=f"download_mp4_{mp4_name}", on_click="ignore",
+                )
+            with st.expander("Optional: download the complete ZIP pack"):
+                st.download_button("Download adaptive clip pack (.zip)", archive, file_name="creator_os_adaptive_clips.zip", mime="application/zip", key="download_auto_repurpose", on_click="ignore")
             with st.expander("Transcript and evidence"):
                 st.write(analysis["transcript"]["text"][:12000] or "No transcript available.")
                 st.json({"strategy": analysis["hook_plan"], "moments": analysis["moments"]})
@@ -152,7 +171,13 @@ if module == "Repurposing Studio":
         try:
             segments = parse_segments(segment_text)
             archive = render_zip(manual_source, segments, vertical=aspect_manual.startswith("Vertical"))
-            st.download_button("Download manual clip pack", archive, "creator_os_manual_clips.zip", "application/zip", key="download_manual")
+            for mp4_name, mp4_data in extract_mp4s(archive):
+                st.download_button(
+                    f"Download {mp4_name}", data=mp4_data, file_name=mp4_name,
+                    mime="video/mp4", key=f"download_manual_mp4_{mp4_name}", on_click="ignore",
+                )
+            with st.expander("Optional: download manual ZIP pack"):
+                st.download_button("Download manual clip pack", archive, "creator_os_manual_clips.zip", "application/zip", key="download_manual", on_click="ignore")
         except Exception as exc:
             st.error(str(exc))
     transcript = st.text_area("Paste transcript for 1–3 word caption beats", key="repurpose_transcript")
@@ -225,8 +250,16 @@ elif module == "Podcast-to-Shorts":
                 st.warning("No speech transcript was produced; review the visual fallback carefully.")
             with st.spinner("Rendering podcast clips…"):
                 archive = render_auto_zip(source, analysis["moments"], words=analysis["transcript"]["words"], vertical=podcast_aspect.startswith("Vertical"), captions=podcast_captions, normalize_audio=True, notes=f"Content route: {analysis['hook_plan']['label']}\nPrimary hook: {analysis['hook_plan']['primary']}")
-            st.success(f"Rendered {len(analysis['moments'])} podcast clip(s).")
-            st.download_button("Download podcast Shorts (.zip)", archive, "podcast_shorts.zip", "application/zip", key="download_podcast")
+            podcast_mp4s = extract_mp4s(archive)
+            st.success(f"Rendered {len(podcast_mp4s)} podcast MP4 clip(s).")
+            st.subheader("Download finished podcast MP4(s)")
+            for mp4_name, mp4_data in podcast_mp4s:
+                st.download_button(
+                    f"Download {mp4_name}", data=mp4_data, file_name=mp4_name,
+                    mime="video/mp4", key=f"download_podcast_mp4_{mp4_name}", on_click="ignore",
+                )
+            with st.expander("Optional: download podcast ZIP pack"):
+                st.download_button("Download podcast Shorts (.zip)", archive, "podcast_shorts.zip", "application/zip", key="download_podcast", on_click="ignore")
             with st.expander("Transcript preview"):
                 st.write(analysis["transcript"]["text"][:12000] or "No transcript available.")
         except Exception as exc:
