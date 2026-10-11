@@ -38,6 +38,38 @@ def _probe(source: str) -> tuple[float, bool, bool]:
     return duration, has_video, has_audio
 
 
+def _validate_rendered_output(source: str, expected_duration: float) -> dict[str, Any]:
+    result = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries",
+         "format=duration:stream=codec_type,width,height,r_frame_rate",
+         "-of", "json", source],
+        capture_output=True, text=True, timeout=30,
+    )
+    if result.returncode:
+        raise RuntimeError("Rendered MP4 failed ffprobe validation: " + (result.stderr[-1000:] or "unknown probe error"))
+    import json
+    try:
+        data = json.loads(result.stdout)
+        duration = float(data["format"]["duration"])
+        streams = data.get("streams", [])
+        video = next(s for s in streams if s.get("codec_type") == "video")
+        audio = any(s.get("codec_type") == "audio" for s in streams)
+        width, height = int(video["width"]), int(video["height"])
+        rate = str(video.get("r_frame_rate", "0/1")).split("/")
+        fps = float(rate[0]) / max(1.0, float(rate[1]))
+    except (ValueError, KeyError, TypeError, StopIteration, ZeroDivisionError) as exc:
+        raise RuntimeError("Rendered MP4 is missing required video/audio metadata.") from exc
+    if width != 1920 or height != 1080:
+        raise RuntimeError(f"Rendered MP4 has unexpected dimensions: {width}×{height}.")
+    if abs(fps - 30.0) > 0.1:
+        raise RuntimeError(f"Rendered MP4 is not 30 fps (reported {fps:.3f}).")
+    if abs(duration - expected_duration) > max(0.35, expected_duration * 0.03):
+        raise RuntimeError(f"Rendered duration mismatch: expected about {expected_duration:.2f}s, got {duration:.2f}s.")
+    if not audio:
+        raise RuntimeError("Rendered MP4 has no audio stream; expected source audio or a silent fallback track.")
+    return {"duration_seconds": round(duration, 2), "resolution": f"{width}×{height}", "fps": round(fps, 3), "has_audio": audio}
+
+
 def render_landscape_montage(
     uploaded_files: list[Any],
     max_seconds_per_clip: int = 30,
@@ -109,12 +141,11 @@ def render_landscape_montage(
         if not output.exists() or output.stat().st_size < 1024:
             raise RuntimeError("The renderer finished without creating a valid MP4.")
         total_duration = sum(row["used_seconds"] for row in manifest_rows)
+        verified = _validate_rendered_output(str(output), total_duration)
         return output.read_bytes(), {
             "filename": output.name,
             "bytes": output.stat().st_size,
-            "duration_seconds": round(total_duration, 2),
-            "resolution": "1920×1080",
-            "fps": 30,
+            **verified,
             "clips": manifest_rows,
             "audio_normalized": bool(normalize_audio),
             "quality": output_quality,
