@@ -22,6 +22,8 @@ def test_planner_templates_work_without_api_key():
     story = plan_story("a lost dog finds home", "Cinematic")
     assert "STORY-TO-VIDEO PRODUCTION PLAN" in story
     assert "SCENE 10" in story
+    assert "HOOK STRATEGY" in story
+    assert "HOOK STRATEGY" in plan_transformation("restore a chair", "Short")
 
 
 def test_packaging_and_caption_fallbacks_work_without_api_key():
