@@ -1,21 +1,36 @@
 from __future__ import annotations
-from .ai import ai_text
+import re
+from .hook_engine import classify_content
 
 
-def make_packaging(topic: str, audience: str = "US / Tier-1", format_type: str = "Short") -> str:
-    """Build a zero-cost packaging draft using deterministic local templates."""
+def make_packaging(topic: str, audience: str = "US / Tier-1", format_type: str = "Short", content_type: str = "Auto") -> str:
+    """Create an offline packaging brief with hook strategies matched to the declared content."""
     clean = " ".join(topic.split()) or "Your video idea"
     audience_clean = " ".join(audience.split()) or "US / Tier-1"
     fmt = format_type.strip() or "Short"
-    hook = f"Watch what happens when {clean.lower()}."
+    strategy = classify_content(clean, [], 0, content_type)
+    words = clean.split()
+    short_topic = " ".join(words[:12])
+    title_recipes = {
+        "funny_unexpected": [f"{short_topic} Happened at the PERFECT Time 😳", f"Nobody Expected This Moment 😂", f"Wait for the Ending…"],
+        "story_drama": [f"The Moment Everything Changed", f"They Didn't See This Coming…", f"The Truth Finally Came Out"],
+        "podcast_opinion": [f"The Truth About {short_topic}", f"Most People Get This Wrong", f"One Point That Changes the Conversation"],
+        "satisfying_transformation": [f"From {short_topic} to a Clean Reveal ✨", f"Watch This Transformation", f"The Before-and-After Is Wild"],
+        "tutorial_education": [f"How to {short_topic}", f"Stop Making This Mistake", f"The Simple Fix Explained"],
+        "sports_action": [f"The Play Nobody Expected 😳", f"This Changed the Game", f"Wait for the Reaction"],
+        "reaction_commentary": [f"That Reaction Says Everything 😳", f"Watch What They React To", f"No One Was Ready for This"],
+        "general_visual": [f"{short_topic} — Watch Closely 👀", f"The Moment You Need to See", f"How Did This Happen?"],
+    }
+    titles = title_recipes[strategy["key"]]
     return (
-        f"TITLE\n{clean} — The Moment Everything Changes 😳\n\n"
-        f"HOOK\n{hook}\n\n"
-        f"DESCRIPTION\nThis {fmt.lower()} shows {clean.lower()}. Made for viewers interested in {audience_clean}; the title and description should match the actual footage.\n\n"
-        f"HASHTAGS\n#Shorts #UnexpectedMoments #Satisfying #Video\n\n"
-        f"THUMBNAIL CONCEPT\nOne clear focal subject, high contrast, action frozen at its most surprising point; use 2–4 words only if they add context.\n\n"
-        f"VIEWER PROMISE\nDeliver the exact moment implied by the title quickly, without misleading setup.\n\n"
-        f"MODE\nFree local template; no paid AI API or API key required."
+        f"CONTENT ROUTE\n{strategy['label']} (confidence: {strategy['confidence']:.0%}; mode: {strategy['mode']})\n\n"
+        f"TITLE OPTIONS — verify against footage\n1. {titles[0]}\n2. {titles[1]}\n3. {titles[2]}\n\n"
+        f"PRIMARY HOOK STRATEGY\n{strategy['primary']}\n\nOPENING DIRECTION\n{strategy['opening']}\n\n"
+        f"ALTERNATE HOOK STRATEGIES\n" + "\n".join(f"- {item}" for item in strategy["alternates"]) + "\n\n"
+        f"EDITING RHYTHM\n{strategy['rhythm']}\n\nCAPTION DIRECTION\n{strategy['caption']}\n\n"
+        f"DESCRIPTION\nThis {fmt.lower()} is about {clean}. Made for {audience_clean}. Keep every claim aligned with the actual footage; do not promise a reveal that the video does not deliver.\n\n"
+        f"HASHTAGS\n#Shorts #CreatorContent\n\nTHUMBNAIL CONCEPT\nOne focal subject, clear emotional/action beat, strong contrast, and 0–4 words only when they add context.\n\n"
+        f"VIEWER PROMISE\n{strategy['edit']}\n\nFREE MODE\nDeterministic local templates; no paid AI API required."
     )
 
 

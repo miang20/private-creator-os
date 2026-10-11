@@ -1,12 +1,10 @@
 import shutil
 import subprocess
-from pathlib import Path
-
-import pytest
 from core.video import parse_segments, cut_segment, _write_caption_srt
 from core.packaging import make_packaging, build_caption_plan
 from core.planners import plan_story, plan_transformation
 from core.automation import choose_moments
+from core.hook_engine import classify_content, strategy_score
 
 
 def test_parse_segments_accepts_valid_lines():
@@ -14,6 +12,7 @@ def test_parse_segments_accepts_valid_lines():
 
 
 def test_parse_segments_rejects_invalid_range():
+    import pytest
     with pytest.raises(ValueError):
         parse_segments("5,3,bad")
 
@@ -26,8 +25,24 @@ def test_planner_templates_work_without_api_key():
 
 
 def test_packaging_and_caption_fallbacks_work_without_api_key():
-    assert "TITLE" in make_packaging("a satisfying restoration")
+    assert "TITLE OPTIONS" in make_packaging("a satisfying restoration", content_type="Satisfying / Transformation")
     assert build_caption_plan("this is a small test", 2) == "this is\na small\ntest"
+
+
+def test_strategy_router_uses_distinct_content_archetypes():
+    funny = classify_content("Wait for it, that was a hilarious unexpected fail", [], 30)
+    podcast = classify_content("I think the problem is people never explain the reason", [], 30)
+    tutorial = classify_content("Here is how to fix this mistake, first step", [], 30)
+    satisfying = classify_content("Watch this restoration and polishing transformation", [2, 4, 8], 20)
+    assert funny["key"] == "funny_unexpected"
+    assert podcast["key"] == "podcast_opinion"
+    assert tutorial["key"] == "tutorial_education"
+    assert satisfying["key"] == "satisfying_transformation"
+    assert len(set([funny["primary"], podcast["primary"], tutorial["primary"], satisfying["primary"]])) == 4
+
+
+def test_strategy_score_prioritizes_visual_activity_for_visual_niches():
+    assert strategy_score(0.0, 0.1, 0.1, 0.9, 0, "satisfying_transformation") > strategy_score(0.0, 0.9, 0.9, 0.1, 0, "podcast_opinion")
 
 
 def test_local_moment_ranking_returns_bounded_nonduplicate_windows():
@@ -35,6 +50,7 @@ def test_local_moment_ranking_returns_bounded_nonduplicate_windows():
     assert 1 <= len(moments) <= 4
     assert all(0 <= item["start"] < item["end"] <= 120 for item in moments)
     assert len({item["start"] for item in moments}) == len(moments)
+    assert all(item["strategy"] for item in moments)
 
 
 def test_caption_srt_uses_clip_relative_word_timestamps(tmp_path):
@@ -48,6 +64,7 @@ def test_caption_srt_uses_clip_relative_word_timestamps(tmp_path):
 
 def test_ffmpeg_renders_clip_with_burned_captions_and_normalized_audio(tmp_path):
     if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        import pytest
         pytest.skip("FFmpeg tools are not installed")
     source = tmp_path / "source.mp4"
     result = subprocess.run([
@@ -57,6 +74,7 @@ def test_ffmpeg_renders_clip_with_burned_captions_and_normalized_audio(tmp_path)
         "-t", "4", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(source),
     ], capture_output=True, text=True, timeout=60)
     if result.returncode != 0:
+        import pytest
         pytest.skip("FFmpeg build cannot create the synthetic test video")
     srt = tmp_path / "captions.srt"
     srt.write_text("1\n00:00:00,200 --> 00:00:01,200\nHello there\n", encoding="utf-8")
