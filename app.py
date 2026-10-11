@@ -31,7 +31,30 @@ def analyze_uploaded(source, count: int, clip_length: int, transcribe: bool, mod
     with tempfile.TemporaryDirectory(prefix="creator_os_analysis_") as tmp:
         path = Path(tmp) / ("source" + suffix)
         path.write_bytes(source.getvalue())
-        return analyze_media(str(path), count=count, clip_length=clip_length, transcribe=transcribe, model_size=model_size, requested_strategy=strategy)
+        try:
+            analysis = analyze_media(
+                str(path), count=count, clip_length=clip_length,
+                transcribe=transcribe, model_size=model_size,
+                requested_strategy=strategy,
+            )
+        except TypeError as exc:
+            # Compatibility with a hosted worker still importing an older
+            # core.automation module whose analyze_media lacks this keyword.
+            if "requested_strategy" not in str(exc) or "unexpected keyword argument" not in str(exc):
+                raise
+            analysis = analyze_media(
+                str(path), count=count, clip_length=clip_length,
+                transcribe=transcribe, model_size=model_size,
+            )
+        # Keep the UI functional during a stale-module/deployment mismatch.
+        # The current engine already supplies this plan and strategy-aware ranks.
+        if "hook_plan" not in analysis:
+            analysis["hook_plan"] = build_hook_plan(analysis, strategy)
+            route_key = analysis["hook_plan"]["key"]
+            for moment in analysis.get("moments", []):
+                moment.setdefault("strategy", route_key)
+                moment.setdefault("reason", f"Compatibility fallback: review moment under {analysis['hook_plan']['label']} route.")
+        return analysis
 
 
 def show_moments(analysis):
