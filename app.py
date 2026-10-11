@@ -167,6 +167,8 @@ if module == "Repurposing Studio":
             st.success(f"Rendered {len(mp4_files)} MP4 clip(s) using the {analysis['hook_plan']['label']} route.")
             st.subheader("Download finished MP4 video(s)")
             for mp4_name, mp4_data in mp4_files:
+                with st.expander(f"Preview: {mp4_name}", expanded=True):
+                    st.video(mp4_data)
                 st.download_button(
                     f"Download {mp4_name}", data=mp4_data, file_name=mp4_name,
                     mime="video/mp4", key=f"download_mp4_{mp4_name}", on_click="ignore",
