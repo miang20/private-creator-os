@@ -132,9 +132,12 @@ if module == "Repurposing Studio":
     with c7:
         normalize = st.checkbox("Normalize audio", value=True, key="repurpose_normalize")
     dynamic_zoom = st.checkbox("Apply subtle dynamic zoom (centered)", value=True, key="repurpose_dynamic_zoom", help="Adds gentle movement; it does not track a person or object.")
+    zoom_strength_pct = st.slider("Dynamic zoom strength", 1, 8, 4, step=1, disabled=not dynamic_zoom, key="repurpose_zoom_strength")
+    zoom_strength = zoom_strength_pct / 100.0
     e1, e2 = st.columns(2)
     with e1:
         caption_style = st.selectbox("Caption style", ["Creator Pop", "Classic Yellow", "Clean White"], key="repurpose_caption_style")
+        caption_words_per_beat = st.slider("Words per caption beat", 1, 3, 2, key="repurpose_caption_words", disabled=not captions)
     with e2:
         output_quality = st.selectbox("Render quality", ["Balanced 1080p", "High Quality 1080p", "Fast Preview"], key="repurpose_quality")
     hook_overlay = st.checkbox("Add opening hook text overlay", value=False, key="repurpose_hook_overlay", help="Uses the detected transcript excerpt or moment label for the first 1.8 seconds.")
@@ -154,7 +157,7 @@ if module == "Repurposing Studio":
                      f"Editing rhythm: {analysis['hook_plan']['rhythm']}\nDetection method: {analysis['method']}\n"
                      "Scores are heuristic, not guaranteed viral predictions. Review context and payoff before publishing.")
             with st.spinner("Rendering MP4 clips and preparing ZIP…"):
-                archive = render_auto_zip(source, analysis["moments"], words=analysis["transcript"]["words"], vertical=aspect.startswith("Vertical"), captions=captions, normalize_audio=normalize, notes=notes, edit_profile=analysis["hook_plan"]["key"], dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality, hook_overlay=hook_overlay, remove_silence=remove_silence)
+                archive = render_auto_zip(source, analysis["moments"], words=analysis["transcript"]["words"], vertical=aspect.startswith("Vertical"), captions=captions, normalize_audio=normalize, notes=notes, edit_profile=analysis["hook_plan"]["key"], dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality, hook_overlay=hook_overlay, remove_silence=remove_silence, zoom_strength=zoom_strength, caption_words_per_beat=caption_words_per_beat)
             mp4_files = extract_mp4s(archive)
             st.success(f"Rendered {len(mp4_files)} MP4 clip(s) using the {analysis['hook_plan']['label']} route.")
             st.subheader("Download finished MP4 video(s)")
@@ -179,7 +182,7 @@ if module == "Repurposing Studio":
     if st.button("Render manual clips", disabled=manual_source is None, key="manual_render"):
         try:
             segments = parse_segments(segment_text)
-            archive = render_zip(manual_source, segments, vertical=aspect_manual.startswith("Vertical"), dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality, remove_silence=remove_silence)
+            archive = render_zip(manual_source, segments, vertical=aspect_manual.startswith("Vertical"), dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality, remove_silence=remove_silence, zoom_strength=zoom_strength)
             for mp4_name, mp4_data in extract_mp4s(archive):
                 st.download_button(
                     f"Download {mp4_name}", data=mp4_data, file_name=mp4_name,
@@ -254,6 +257,8 @@ elif module == "Podcast-to-Shorts":
         podcast_quality = st.selectbox("Podcast render quality", ["Balanced 1080p", "High Quality 1080p", "Fast Preview"], key="podcast_quality")
     podcast_hook_overlay = st.checkbox("Add opening hook text overlay", value=False, key="podcast_hook_overlay")
     podcast_remove_silence = st.checkbox("Remove long silent gaps", value=True, key="podcast_remove_silence", help="Cuts sustained low-volume gaps from both video and audio.")
+    podcast_zoom_pct = st.slider("Podcast dynamic zoom strength", 1, 8, 4, step=1, key="podcast_zoom_strength")
+    podcast_caption_words = st.slider("Podcast words per caption beat", 1, 3, 2, key="podcast_caption_words", disabled=not podcast_captions)
     if st.button("Transcribe → rank → render", type="primary", disabled=source is None, key="auto_podcast"):
         try:
             with st.spinner("Transcribing and ranking locally; first run may download model weights…"):
@@ -265,7 +270,7 @@ elif module == "Podcast-to-Shorts":
             if not analysis["transcript"]["text"]:
                 st.warning("No speech transcript was produced; review the visual fallback carefully.")
             with st.spinner("Rendering podcast clips…"):
-                archive = render_auto_zip(source, analysis["moments"], words=analysis["transcript"]["words"], vertical=podcast_aspect.startswith("Vertical"), captions=podcast_captions, normalize_audio=True, notes=f"Content route: {analysis['hook_plan']['label']}\nPrimary hook: {analysis['hook_plan']['primary']}", dynamic_zoom=True, caption_style=podcast_caption_style, output_quality=podcast_quality, hook_overlay=podcast_hook_overlay, remove_silence=podcast_remove_silence)
+                archive = render_auto_zip(source, analysis["moments"], words=analysis["transcript"]["words"], vertical=podcast_aspect.startswith("Vertical"), captions=podcast_captions, normalize_audio=True, notes=f"Content route: {analysis['hook_plan']['label']}\nPrimary hook: {analysis['hook_plan']['primary']}", dynamic_zoom=True, caption_style=podcast_caption_style, output_quality=podcast_quality, hook_overlay=podcast_hook_overlay, remove_silence=podcast_remove_silence, zoom_strength=podcast_zoom_pct / 100.0, caption_words_per_beat=podcast_caption_words)
             podcast_mp4s = extract_mp4s(archive)
             st.success(f"Rendered {len(podcast_mp4s)} podcast MP4 clip(s).")
             st.subheader("Download finished podcast MP4(s)")
