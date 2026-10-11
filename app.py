@@ -137,6 +137,7 @@ if module == "Repurposing Studio":
         caption_style = st.selectbox("Caption style", ["Creator Pop", "Classic Yellow", "Clean White"], key="repurpose_caption_style")
     with e2:
         output_quality = st.selectbox("Render quality", ["Balanced 1080p", "High Quality 1080p", "Fast Preview"], key="repurpose_quality")
+    hook_overlay = st.checkbox("Add opening hook text overlay", value=False, key="repurpose_hook_overlay", help="Uses the detected transcript excerpt or moment label for the first 1.8 seconds.")
 
     if st.button("Analyze → choose hook strategy → render clips", type="primary", disabled=source is None, key="auto_repurpose"):
         try:
@@ -152,7 +153,7 @@ if module == "Repurposing Studio":
                      f"Editing rhythm: {analysis['hook_plan']['rhythm']}\nDetection method: {analysis['method']}\n"
                      "Scores are heuristic, not guaranteed viral predictions. Review context and payoff before publishing.")
             with st.spinner("Rendering MP4 clips and preparing ZIP…"):
-                archive = render_auto_zip(source, analysis["moments"], words=analysis["transcript"]["words"], vertical=aspect.startswith("Vertical"), captions=captions, normalize_audio=normalize, notes=notes, edit_profile=analysis["hook_plan"]["key"], dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality)
+                archive = render_auto_zip(source, analysis["moments"], words=analysis["transcript"]["words"], vertical=aspect.startswith("Vertical"), captions=captions, normalize_audio=normalize, notes=notes, edit_profile=analysis["hook_plan"]["key"], dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality, hook_overlay=hook_overlay)
             mp4_files = extract_mp4s(archive)
             st.success(f"Rendered {len(mp4_files)} MP4 clip(s) using the {analysis['hook_plan']['label']} route.")
             st.subheader("Download finished MP4 video(s)")
@@ -250,6 +251,7 @@ elif module == "Podcast-to-Shorts":
         podcast_caption_style = st.selectbox("Podcast caption style", ["Creator Pop", "Classic Yellow", "Clean White"], key="podcast_caption_style")
     with p6:
         podcast_quality = st.selectbox("Podcast render quality", ["Balanced 1080p", "High Quality 1080p", "Fast Preview"], key="podcast_quality")
+    podcast_hook_overlay = st.checkbox("Add opening hook text overlay", value=False, key="podcast_hook_overlay")
     if st.button("Transcribe → rank → render", type="primary", disabled=source is None, key="auto_podcast"):
         try:
             with st.spinner("Transcribing and ranking locally; first run may download model weights…"):
@@ -261,7 +263,7 @@ elif module == "Podcast-to-Shorts":
             if not analysis["transcript"]["text"]:
                 st.warning("No speech transcript was produced; review the visual fallback carefully.")
             with st.spinner("Rendering podcast clips…"):
-                archive = render_auto_zip(source, analysis["moments"], words=analysis["transcript"]["words"], vertical=podcast_aspect.startswith("Vertical"), captions=podcast_captions, normalize_audio=True, notes=f"Content route: {analysis['hook_plan']['label']}\nPrimary hook: {analysis['hook_plan']['primary']}", dynamic_zoom=True, caption_style=podcast_caption_style, output_quality=podcast_quality)
+                archive = render_auto_zip(source, analysis["moments"], words=analysis["transcript"]["words"], vertical=podcast_aspect.startswith("Vertical"), captions=podcast_captions, normalize_audio=True, notes=f"Content route: {analysis['hook_plan']['label']}\nPrimary hook: {analysis['hook_plan']['primary']}", dynamic_zoom=True, caption_style=podcast_caption_style, output_quality=podcast_quality, hook_overlay=podcast_hook_overlay)
             podcast_mp4s = extract_mp4s(archive)
             st.success(f"Rendered {len(podcast_mp4s)} podcast MP4 clip(s).")
             st.subheader("Download finished podcast MP4(s)")
