@@ -186,7 +186,7 @@ if module == "Repurposing Studio":
     if st.button("Render manual clips", disabled=manual_source is None, key="manual_render"):
         try:
             segments = parse_segments(segment_text)
-            archive = render_zip(manual_source, segments, vertical=aspect_manual.startswith("Vertical"), dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality, remove_silence=remove_silence, zoom_strength=zoom_strength, crop_position=crop_position)
+            archive = render_zip(manual_source, segments, vertical=aspect_manual.startswith("Vertical"), dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality, remove_silence=remove_silence, zoom_strength=zoom_strength, crop_position=crop_position, face_tracking=face_tracking)
             for mp4_name, mp4_data in extract_mp4s(archive):
                 st.download_button(
                     f"Download {mp4_name}", data=mp4_data, file_name=mp4_name,
