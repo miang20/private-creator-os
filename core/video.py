@@ -152,10 +152,10 @@ def render_zip(uploaded_file, segments: Iterable[tuple[float, float, str]], vert
         root = Path(tmp)
         source = root / _safe_name(uploaded_file.name)
         source.write_bytes(uploaded_file.getvalue())
-        return _render_archive(source, uploaded_file.name, segments, vertical=vertical)
+        return _render_archive(source, uploaded_file.name, segments, vertical=vertical, dynamic_zoom=dynamic_zoom)
 
 
-def render_auto_zip(uploaded_file, moments: list[dict[str, Any]], words: list[dict[str, Any]] | None = None, vertical: bool = True, captions: bool = True, normalize_audio: bool = True, notes: str = "", edit_profile: str = "general_visual") -> bytes:
+def render_auto_zip(uploaded_file, moments: list[dict[str, Any]], words: list[dict[str, Any]] | None = None, vertical: bool = True, captions: bool = True, normalize_audio: bool = True, notes: str = "", edit_profile: str = "general_visual", dynamic_zoom: bool = False) -> bytes:
     """Render ranked auto-detected moments and optionally burn local Whisper word captions."""
     segments = [(float(m["start"]), float(m["end"]), str(m.get("title") or f"Moment_{i+1:02d}")) for i, m in enumerate(moments)]
     if not segments:
@@ -164,4 +164,4 @@ def render_auto_zip(uploaded_file, moments: list[dict[str, Any]], words: list[di
         root = Path(tmp)
         source = root / _safe_name(uploaded_file.name)
         source.write_bytes(uploaded_file.getvalue())
-        return _render_archive(source, uploaded_file.name, segments, vertical=vertical, words=words, captions=captions, normalize_audio=normalize_audio, notes=notes, edit_profile=edit_profile)
+        return _render_archive(source, uploaded_file.name, segments, vertical=vertical, words=words, captions=captions, normalize_audio=normalize_audio, notes=notes, edit_profile=edit_profile, dynamic_zoom=dynamic_zoom)
