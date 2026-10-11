@@ -81,6 +81,123 @@ def _write_caption_srt(path: Path, words: list[dict[str, Any]], start: float, en
 
 
 
+
+def _has_audio_stream(source: str) -> bool:
+    if not shutil.which("ffprobe"):
+        return False
+    result = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=codec_type", "-of", "csv=p=0", source],
+        capture_output=True, text=True, timeout=30,
+    )
+    return result.returncode == 0 and "audio" in result.stdout.lower()
+
+
+def _detect_silences(source: str) -> list[tuple[float, float]]:
+    """Detect sustained low-volume gaps once per source; timestamps are source-relative."""
+    if not _has_audio_stream(source) or not shutil.which("ffmpeg"):
+        return []
+    result = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-nostats", "-i", source, "-vn",
+         "-af", "silencedetect=noise=-38dB:d=0.65", "-f", "null", "-"],
+        capture_output=True, text=True, timeout=900,
+    )
+    if result.returncode not in (0, 1):
+        return []
+    log = (result.stderr or "") + "\n" + (result.stdout or "")
+    silences = []
+    pending_start = None
+    for line in log.splitlines():
+        start_match = re.search(r"silence_start:\s*([0-9]+(?:\.[0-9]+)?)", line)
+        end_match = re.search(r"silence_end:\s*([0-9]+(?:\.[0-9]+)?)", line)
+        if start_match:
+            pending_start = float(start_match.group(1))
+        if end_match and pending_start is not None:
+            end = float(end_match.group(1))
+            if end - pending_start >= 0.65:
+                silences.append((pending_start, end))
+            pending_start = None
+    if pending_start is not None:
+        duration_match = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", log)
+        if duration_match:
+            duration = int(duration_match.group(1)) * 3600 + int(duration_match.group(2)) * 60 + float(duration_match.group(3))
+            if duration - pending_start >= 0.65:
+                silences.append((pending_start, duration))
+    return silences
+
+
+def _active_intervals(start: float, end: float, silences: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Keep active sections while preserving a small amount of silence around cuts."""
+    removed = []
+    for silence_start, silence_end in silences:
+        a = max(start, silence_start + 0.08)
+        b = min(end, silence_end - 0.08)
+        if b - a >= 0.50:
+            removed.append((a, b))
+    removed.sort()
+    merged = []
+    for a, b in removed:
+        if merged and a <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], b))
+        else:
+            merged.append((a, b))
+    active = []
+    cursor = start
+    for a, b in merged:
+        if a - cursor >= 0.18:
+            active.append((cursor, a))
+        cursor = max(cursor, b)
+    if end - cursor >= 0.18:
+        active.append((cursor, end))
+    return active or [(start, end)]
+
+
+def _remap_words_to_intervals(words: list[dict[str, Any]], intervals: list[tuple[float, float]]) -> list[dict[str, Any]]:
+    """Map original word timestamps onto the concatenated silence-trimmed timeline."""
+    mapped = []
+    offset = 0.0
+    for interval_start, interval_end in intervals:
+        for item in words:
+            try:
+                a, b = float(item["start"]), float(item["end"])
+                word = str(item["word"]).strip()
+            except (KeyError, TypeError, ValueError):
+                continue
+            left, right = max(a, interval_start), min(b, interval_end)
+            if word and right > left:
+                mapped.append({"start": offset + left - interval_start, "end": offset + right - interval_start, "word": word})
+        offset += interval_end - interval_start
+    return sorted(mapped, key=lambda item: item["start"])
+
+
+def _concat_active_intervals(source: str, intervals: list[tuple[float, float]], destination: str) -> float:
+    """Concatenate non-silent intervals, keeping video and audio synchronized."""
+    if not intervals:
+        raise ValueError("Silence removal left no usable content.")
+    has_video = _has_video_stream(source)
+    filters = []
+    labels = []
+    for i, (start, end) in enumerate(intervals):
+        if has_video:
+            filters.append(f"[0:v]trim=start={start:.3f}:end={end:.3f},setpts=PTS-STARTPTS[v{i}]")
+        filters.append(f"[0:a]atrim=start={start:.3f}:end={end:.3f},asetpts=PTS-STARTPTS[a{i}]")
+        labels.append(f"[v{i}][a{i}]" if has_video else f"[a{i}]")
+    if has_video:
+        filters.append("".join(labels) + f"concat=n={len(intervals)}:v=1:a=1[vout][aout]")
+        maps = ["-map", "[vout]", "-map", "[aout]"]
+    else:
+        filters.append("".join(labels) + f"concat=n={len(intervals)}:v=0:a=1[aout]")
+        maps = ["-map", "[aout]"]
+    command = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", source,
+               "-filter_complex", ";".join(filters), *maps]
+    if has_video:
+        command += ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "18"]
+    command += ["-c:a", "aac", "-b:a", "256k", "-movflags", "+faststart", destination]
+    result = subprocess.run(command, capture_output=True, text=True, timeout=900)
+    if result.returncode != 0 or not os.path.exists(destination) or os.path.getsize(destination) < 1024:
+        raise RuntimeError("Silence-removal render failed: " + (result.stderr[-1800:] or "No usable intermediate output."))
+    return sum(end - start for start, end in intervals)
+
+
 def _caption_force_style(caption_style: str, vertical: bool) -> str:
     """Return readable caption styling for the selected export preset."""
     preset = (caption_style or "Creator Pop").strip().lower()
@@ -161,19 +278,31 @@ def cut_segment(source: str, destination: str, start: float, end: float, vertica
         raise RuntimeError("FFmpeg returned without a usable output file.")
 
 
-def _render_archive(source_path: Path, source_name: str, segments: list[tuple[float, float, str]], vertical: bool, words: list[dict[str, Any]] | None = None, captions: bool = False, normalize_audio: bool = True, notes: str = "", edit_profile: str = "general_visual", dynamic_zoom: bool = False, caption_style: str = "Creator Pop", output_quality: str = "Balanced 1080p", hook_texts: list[str] | None = None) -> bytes:
+def _render_archive(source_path: Path, source_name: str, segments: list[tuple[float, float, str]], vertical: bool, words: list[dict[str, Any]] | None = None, captions: bool = False, normalize_audio: bool = True, notes: str = "", edit_profile: str = "general_visual", dynamic_zoom: bool = False, caption_style: str = "Creator Pop", output_quality: str = "Balanced 1080p", hook_texts: list[str] | None = None, remove_silence: bool = False) -> bytes:
     root = source_path.parent
     outputs = []
     words = words or []
+    silences = _detect_silences(str(source_path)) if remove_silence else []
     for index, (start, end, title) in enumerate(segments, 1):
         output = root / f"{index:02d}_{_safe_name(title)}.mp4"
         subtitle_path = root / f"{index:02d}_{_safe_name(title)}.srt"
-        subtitle_file = str(subtitle_path) if captions and _write_caption_srt(subtitle_path, words, start, end) else None
+        intervals = _active_intervals(start, end, silences) if remove_silence else [(start, end)]
+        did_remove = bool(remove_silence and (len(intervals) > 1 or intervals[0][0] > start + 0.10 or intervals[-1][1] < end - 0.10))
+        render_source = source_path
+        render_start, render_end = start, end
+        caption_words = words
+        if did_remove:
+            silence_cut = root / f"{index:02d}_{_safe_name(title)}_silencecut.mp4"
+            render_end = _concat_active_intervals(str(source_path), intervals, str(silence_cut))
+            render_source = silence_cut
+            render_start = 0.0
+            caption_words = _remap_words_to_intervals(words, intervals)
+        subtitle_file = str(subtitle_path) if captions and _write_caption_srt(subtitle_path, caption_words, render_start, render_end) else None
         hook_text = hook_texts[index - 1] if hook_texts and index <= len(hook_texts) else None
-        cut_segment(str(source_path), str(output), start, end, vertical=vertical, subtitle_file=subtitle_file, normalize_audio=normalize_audio, edit_profile=edit_profile, dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality, hook_text=hook_text)
+        cut_segment(str(render_source), str(output), render_start, render_end, vertical=vertical, subtitle_file=subtitle_file, normalize_audio=normalize_audio, edit_profile=edit_profile, dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality, hook_text=hook_text)
         outputs.append(output)
     manifest = root / "edit_manifest.txt"
-    manifest.write_text("Creator OS edit manifest\nSource: " + source_name + "\nContent-specific edit profile: " + edit_profile + "\nAspect: " + ("9:16 vertical" if vertical else "16:9 landscape") + "\nCaptions burned in: " + ("yes" if captions and words else "no (word timestamps unavailable or captions disabled)") + "\nAudio normalization: " + ("on" if normalize_audio else "off") + "\nSegments (source timestamps in seconds):\n" + "\n".join(f"{i}. {start:.2f}s–{end:.2f}s | {title}" for i,(start,end,title) in enumerate(segments,1)) + "\n\n" + notes + "\nUse only media you own or have permission to edit.\n", encoding="utf-8")
+    manifest.write_text("Creator OS edit manifest\nSource: " + source_name + "\nContent-specific edit profile: " + edit_profile + "\nAspect: " + ("9:16 vertical" if vertical else "16:9 landscape") + "\nCaptions burned in: " + ("yes" if captions and words else "no (word timestamps unavailable or captions disabled)") + "\nCaption style: " + caption_style + "\nOutput quality: " + output_quality + "\nDynamic zoom: " + ("on" if dynamic_zoom else "off") + "\nSilence removal: " + ("on" if remove_silence else "off") + "\nAudio normalization: " + ("on" if normalize_audio else "off") + "\nSegments (source timestamps in seconds):\n" + "\n".join(f"{i}. {start:.2f}s–{end:.2f}s | {title}" for i,(start,end,title) in enumerate(segments,1)) + "\n\n" + notes + "\nUse only media you own or have permission to edit.\n", encoding="utf-8")
     archive = root / "creator_os_export.zip"
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
         for output in outputs:
@@ -182,7 +311,7 @@ def _render_archive(source_path: Path, source_name: str, segments: list[tuple[fl
     return archive.read_bytes()
 
 
-def render_zip(uploaded_file, segments: Iterable[tuple[float, float, str]], vertical: bool = True, dynamic_zoom: bool = False, caption_style: str = "Creator Pop", output_quality: str = "Balanced 1080p") -> bytes:
+def render_zip(uploaded_file, segments: Iterable[tuple[float, float, str]], vertical: bool = True, dynamic_zoom: bool = False, caption_style: str = "Creator Pop", output_quality: str = "Balanced 1080p", remove_silence: bool = False) -> bytes:
     segments = list(segments)
     if not segments:
         raise ValueError("Select at least one clip to render.")
@@ -190,10 +319,10 @@ def render_zip(uploaded_file, segments: Iterable[tuple[float, float, str]], vert
         root = Path(tmp)
         source = root / _safe_name(uploaded_file.name)
         source.write_bytes(uploaded_file.getvalue())
-        return _render_archive(source, uploaded_file.name, segments, vertical=vertical, dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality)
+        return _render_archive(source, uploaded_file.name, segments, vertical=vertical, dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality, remove_silence=remove_silence)
 
 
-def render_auto_zip(uploaded_file, moments: list[dict[str, Any]], words: list[dict[str, Any]] | None = None, vertical: bool = True, captions: bool = True, normalize_audio: bool = True, notes: str = "", edit_profile: str = "general_visual", dynamic_zoom: bool = False, caption_style: str = "Creator Pop", output_quality: str = "Balanced 1080p", hook_overlay: bool = False) -> bytes:
+def render_auto_zip(uploaded_file, moments: list[dict[str, Any]], words: list[dict[str, Any]] | None = None, vertical: bool = True, captions: bool = True, normalize_audio: bool = True, notes: str = "", edit_profile: str = "general_visual", dynamic_zoom: bool = False, caption_style: str = "Creator Pop", output_quality: str = "Balanced 1080p", hook_overlay: bool = False, remove_silence: bool = False) -> bytes:
     """Render ranked auto-detected moments and optionally burn local Whisper word captions."""
     segments = [(float(m["start"]), float(m["end"]), str(m.get("title") or f"Moment_{i+1:02d}")) for i, m in enumerate(moments)]
     if not segments:
@@ -207,4 +336,4 @@ def render_auto_zip(uploaded_file, moments: list[dict[str, Any]], words: list[di
             for i, moment in enumerate(moments, 1):
                 text = str(moment.get("transcript_excerpt") or moment.get("title") or f"Moment {i}").strip()
                 hook_texts.append(re.sub(r"\s+", " ", text)[:90])
-        return _render_archive(source, uploaded_file.name, segments, vertical=vertical, words=words, captions=captions, normalize_audio=normalize_audio, notes=notes, edit_profile=edit_profile, dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality, hook_texts=hook_texts)
+        return _render_archive(source, uploaded_file.name, segments, vertical=vertical, words=words, captions=captions, normalize_audio=normalize_audio, notes=notes, edit_profile=edit_profile, dynamic_zoom=dynamic_zoom, caption_style=caption_style, output_quality=output_quality, hook_texts=hook_texts, remove_silence=remove_silence)
