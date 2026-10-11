@@ -2,7 +2,7 @@ import io
 import shutil
 import subprocess
 import zipfile
-from core.video import parse_segments, cut_segment, render_auto_zip, _write_caption_srt, _caption_force_style, _quality_settings, _active_intervals, _remap_words_to_intervals, _concat_active_intervals
+from core.video import parse_segments, cut_segment, render_auto_zip, _write_caption_srt, _caption_force_style, _quality_settings, _active_intervals, _remap_words_to_intervals, _concat_active_intervals, _build_face_crop_expression
 from core.packaging import make_packaging, build_caption_plan
 from core.planners import plan_story, plan_transformation
 from core.automation import choose_moments
@@ -197,7 +197,7 @@ def test_auto_render_integrates_captions_zoom_silence_removal_and_mp4_export(tmp
         Upload(), moments, words=words, vertical=True, captions=True,
         normalize_audio=True, dynamic_zoom=True, caption_style="Creator Pop",
         output_quality="Fast Preview", hook_overlay=True, remove_silence=True,
-        zoom_strength=0.04, caption_words_per_beat=2, broll_file=BrollUpload(),
+        zoom_strength=0.04, caption_words_per_beat=2, broll_file=BrollUpload(), face_tracking=True,
     )
     with zipfile.ZipFile(io.BytesIO(archive), "r") as pack:
         mp4_names = [name for name in pack.namelist() if name.endswith(".mp4")]
@@ -210,3 +210,12 @@ def test_auto_render_integrates_captions_zoom_silence_removal_and_mp4_export(tmp
     ], capture_output=True, text=True, timeout=30)
     assert probe.returncode == 0
     assert 2.0 < float(probe.stdout.strip()) < 4.0
+
+
+
+def test_face_crop_expression_interpolates_and_clamps_sampled_centers():
+    expression = _build_face_crop_expression([(0.0, 0.25), (1.0, 0.75), (2.0, 0.60)])
+    assert expression is not None
+    assert expression.startswith("min(max(0,if(lt(t,1.000)")
+    assert "iw-1080" in expression
+    assert _build_face_crop_expression([]) is None
