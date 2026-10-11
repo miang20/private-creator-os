@@ -1,29 +1,27 @@
 from __future__ import annotations
 from .ai import ai_text
 
+
 def make_packaging(topic: str, audience: str = "US / Tier-1", format_type: str = "Short") -> str:
-    prompt = f"""Create one strong YouTube packaging set for this video.
-Topic: {topic}
-Audience: {audience}
-Format: {format_type}
-Return: best title (no hashtags in title), 3-second on-screen hook, description, 5 relevant hashtags, thumbnail concept, viewer promise. Do not invent facts about the video."""
-    result = ai_text(prompt, "You are an expert YouTube editor and packaging strategist. Be specific, concise, and honest.")
-    if result:
-        return result
-    clean = topic.strip() or "Your video idea"
+    """Build a zero-cost packaging draft using deterministic local templates."""
+    clean = " ".join(topic.split()) or "Your video idea"
+    audience_clean = " ".join(audience.split()) or "US / Tier-1"
+    fmt = format_type.strip() or "Short"
+    hook = f"Watch what happens when {clean.lower()}."
     return (
         f"TITLE\n{clean} — The Moment Everything Changes 😳\n\n"
-        f"HOOK\nWait for the exact moment this changes.\n\n"
-        f"DESCRIPTION\nWatch this {format_type.lower()} about {clean.lower()}. The key moment is presented clearly, with no unnecessary setup.\n\n"
-        f"HASHTAGS\n#Shorts #ViralMoments #Unexpected #Creator #Video\n\n"
+        f"HOOK\n{hook}\n\n"
+        f"DESCRIPTION\nThis {fmt.lower()} shows {clean.lower()}. Made for viewers interested in {audience_clean}; the title and description should match the actual footage.\n\n"
+        f"HASHTAGS\n#Shorts #UnexpectedMoments #Satisfying #Video\n\n"
         f"THUMBNAIL CONCEPT\nOne clear focal subject, high contrast, action frozen at its most surprising point; use 2–4 words only if they add context.\n\n"
-        f"NOTE\nTemplate mode is active. Add OPENAI_API_KEY in Streamlit Secrets for custom AI-generated packaging."
+        f"VIEWER PROMISE\nDeliver the exact moment implied by the title quickly, without misleading setup.\n\n"
+        f"MODE\nFree local template; no paid AI API or API key required."
     )
 
+
 def build_caption_plan(transcript: str, max_words: int = 3) -> str:
-    prompt = f"Split this transcript into sequential caption beats of 1 to {max_words} words each. Preserve meaning and order. One beat per line; do not add words. Transcript:\n{transcript}"
-    result = ai_text(prompt, "You create accurate word-highlight subtitle plans. Never invent dialogue.")
-    if result:
-        return result
+    """Split supplied transcript into readable word groups without external AI."""
+    if not 1 <= int(max_words) <= 10:
+        raise ValueError("max_words must be between 1 and 10")
     words = transcript.split()
-    return "\n".join(" ".join(words[i:i + max_words]) for i in range(0, len(words), max_words))
+    return "\n".join(" ".join(words[i:i + int(max_words)]) for i in range(0, len(words), int(max_words)))

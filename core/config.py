@@ -2,6 +2,7 @@ from __future__ import annotations
 import os
 from typing import Optional
 
+
 def get_secret(name: str, default: Optional[str] = None) -> Optional[str]:
     value = os.getenv(name)
     if value:
@@ -15,8 +16,7 @@ def get_secret(name: str, default: Optional[str] = None) -> Optional[str]:
         pass
     return default
 
-def openai_api_key() -> Optional[str]:
-    return get_secret("OPENAI_API_KEY")
 
 def youtube_api_key() -> Optional[str]:
+    """Optional key for official YouTube Data API search (free quota applies)."""
     return get_secret("YOUTUBE_API_KEY")

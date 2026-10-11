@@ -2,7 +2,7 @@ from __future__ import annotations
 import csv
 import io
 import streamlit as st
-from core.config import openai_api_key, youtube_api_key
+from core.config import youtube_api_key
 from core.packaging import make_packaging, build_caption_plan
 from core.planners import plan_story, plan_transformation
 from core.research import search_youtube
@@ -23,16 +23,16 @@ with st.sidebar:
     st.header("Your studio")
     module = st.radio("Select module", ["Repurposing Studio","Breakout Radar","Transformation Planner","Story-to-Video Studio","Podcast-to-Shorts","Packaging Lab"])
     st.divider()
-    st.markdown("**Connection status**")
-    st.write("OpenAI API:", "Connected" if openai_api_key() else "Template mode (no API key)")
-    st.write("YouTube Data API:", "Connected" if youtube_api_key() else "Not configured")
+    st.markdown("**System status**")
+    st.write("AI generation:", "Free local templates (no paid API)")
+    st.write("YouTube Data API:", "Configured (free quota applies)" if youtube_api_key() else "Optional key not configured")
     st.write("FFmpeg:", "Available" if ffmpeg_available() else "Not found")
-    st.caption("Keep API keys in Streamlit Secrets, never in source code.")
-st.info("Personal-use creator tool. Upload only media you own or are licensed to process. API use may incur separate charges; ChatGPT subscription does not include API credits.")
+    st.caption("No paid AI API key is used by this build. Never commit secrets to source code.")
+st.info("Free-first creator workspace. Video processing runs on the app host and is subject to its CPU, memory, upload, and runtime limits. Upload only media you own or are licensed to process.")
 
 if module == "Repurposing Studio":
     st.subheader("AI Long-Video Repurposing Studio")
-    st.write("Upload a source video, choose timestamps for the strongest moments, and render MP4 clips. This first build uses explicit timestamps rather than pretending automatic moment detection is connected.")
+    st.write("Upload a source video, choose timestamps for the strongest moments, and render MP4 clips. Automatic best-moment detection is not connected yet, so this build does not pretend the selected timestamps are AI-detected.")
     source = st.file_uploader("Upload one source video", type=["mp4","mov","m4v","webm"], key="repurpose_source")
     aspect = st.radio("Output format", ["Vertical 9:16 (Shorts)","Landscape 16:9"], horizontal=True)
     st.markdown("Enter one clip per line as start_seconds,end_seconds,title. Example: 12,28,Best_Moment")
@@ -73,31 +73,25 @@ elif module == "Breakout Radar":
             st.download_button("Download research CSV", to_csv(result["items"]), "breakout_radar.csv", "text/csv")
         else:
             st.error(result["message"])
-    st.caption("This searches public videos ranked by views; it does not prove channel growth or new-channel status.")
+    st.caption("Official YouTube Data API search uses its free daily quota. Results are public-video snapshots, not proof of channel growth or new-channel status.")
 
 elif module == "Transformation Planner":
-    st.subheader("AI Transformation Video Planner")
+    st.subheader("Free Transformation Video Planner")
     concept = st.text_area("Transformation idea", placeholder="e.g. restore a rusted vintage motorcycle")
     fmt = st.selectbox("Target format", ["YouTube Short (9:16)","YouTube long-form (16:9)","Both"])
     if st.button("Build transformation plan", type="primary", disabled=not concept.strip()):
-        try:
-            result = plan_transformation(concept, fmt)
-            st.text_area("Production plan", result, height=440)
-            st.download_button("Download plan", result, "transformation_plan.txt", "text/plain")
-        except Exception as exc:
-            st.error(str(exc))
+        result = plan_transformation(concept, fmt)
+        st.text_area("Production plan", result, height=440)
+        st.download_button("Download plan", result, "transformation_plan.txt", "text/plain")
 
 elif module == "Story-to-Video Studio":
-    st.subheader("AI Story-to-Video Studio")
+    st.subheader("Free Story-to-Video Studio")
     premise = st.text_area("Story premise", placeholder="Describe the protagonist, conflict, and payoff…")
     style = st.selectbox("Visual style", ["Cinematic realistic","Stylized 3D","Anime-inspired","Documentary"])
     if st.button("Create scene plan", type="primary", disabled=not premise.strip()):
-        try:
-            result = plan_story(premise, style)
-            st.text_area("Scene and continuity plan", result, height=460)
-            st.download_button("Download scene plan", result, "story_scene_plan.txt", "text/plain")
-        except Exception as exc:
-            st.error(str(exc))
+        result = plan_story(premise, style)
+        st.text_area("Scene and continuity plan", result, height=460)
+        st.download_button("Download scene plan", result, "story_scene_plan.txt", "text/plain")
 
 elif module == "Podcast-to-Shorts":
     st.subheader("Podcast-to-Shorts Factory")
@@ -116,17 +110,14 @@ elif module == "Podcast-to-Shorts":
     st.caption("Automatic transcription, speaker diarization, and automatic best-moment detection are not implemented yet; this workflow uses chosen timestamps.")
 
 elif module == "Packaging Lab":
-    st.subheader("Viral Packaging Lab")
+    st.subheader("Free Viral Packaging Lab")
     topic = st.text_area("Video idea / actual content", placeholder="Describe what really happens in the video…")
     audience = st.text_input("Target audience", "US / Tier-1")
     fmt = st.radio("Video format", ["Short","Long-form"], horizontal=True)
     if st.button("Generate title, hook & thumbnail brief", type="primary", disabled=not topic.strip()):
-        try:
-            result = make_packaging(topic, audience, fmt)
-            st.text_area("Packaging set", result, height=400)
-            st.download_button("Download packaging", result, "youtube_packaging.txt", "text/plain")
-        except Exception as exc:
-            st.error(str(exc))
+        result = make_packaging(topic, audience, fmt)
+        st.text_area("Packaging set", result, height=400)
+        st.download_button("Download packaging", result, "youtube_packaging.txt", "text/plain")
 
 st.divider()
-st.caption("Build status: modular starter with working timestamp-based FFmpeg exports, planning and packaging templates, optional OpenAI generation, and optional YouTube API search. Automatic moment detection, full transcription, generated scene footage, long-form assembly, and background cloud rendering remain future integrations.")
+st.caption("Build status: free local templates, working timestamp-based FFmpeg exports, and optional official YouTube Data API research (free quota applies). Automatic transcription, automatic best-moment detection, word-synced burned-in captions, generated footage, full long-form assembly, and background rendering are not connected yet. Streamlit hosting limits apply.")
